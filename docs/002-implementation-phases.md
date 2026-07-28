@@ -1,6 +1,6 @@
 # 002 — MVP Implementation Phases
 
-**Status:** approved, Phase 0 in progress
+**Status:** approved — Phase 0 done, Phase 1 code done (see its exit criterion), Phase 2 next
 **Scope:** Windows-only MVP — working app, no billing
 **Backend:** Java 21 + Spring Boot 3.4 (Maven)
 **Total estimate:** ~12–16 days
@@ -47,16 +47,16 @@ Overlay Shell  Audio Capture           Backend + STT
 
 ### TypeScript side
 
-- [ ] `pnpm-workspace.yaml` with `apps/desktop` and `packages/protocol` (the Java server is **not** a pnpm member)
-- [ ] Root `package.json` — scripts, `onlyBuiltDependencies` for electron/esbuild (pnpm 10 blocks postinstall by default, and Electron needs its binary download)
-- [ ] `apps/desktop` — `electron-vite` + React + TypeScript, Electron pinned **≥39**
-- [ ] `packages/protocol` — zod schemas, built with `tsc` to `dist/`
-- [ ] `tsconfig.base.json`, ESLint flat config, Prettier
+- [x] `pnpm-workspace.yaml` with `apps/desktop` and `packages/protocol` (the Java server is **not** a pnpm member)
+- [x] Root `package.json` — scripts, `onlyBuiltDependencies` for electron/esbuild (pnpm 10 blocks postinstall by default, and Electron needs its binary download)
+- [x] `apps/desktop` — `electron-vite` + React + TypeScript, Electron pinned **≥39**
+- [x] `packages/protocol` — zod schemas, built with `tsc` to `dist/`
+- [x] `tsconfig.base.json`, ESLint flat config, Prettier
 
 ### Java side
 
-- [ ] `apps/server`: Java **21**, Maven, Spring Boot 3.4.x
-- [ ] Starters: `web`, `websocket`, `validation`, `actuator` — only what is needed to boot
+- [x] `apps/server`: Java **21**, Maven, Spring Boot 3.4.x
+- [x] Starters: `web`, `websocket`, `validation`, `actuator` — only what is needed to boot
 
 > `security`, `oauth2-resource-server`, `data-jdbc`, the PostgreSQL driver, and
 > `com.anthropic:anthropic-java` moved to the phases that configure them (3 and 4).
@@ -64,21 +64,23 @@ Overlay Shell  Audio Capture           Backend + STT
 > and 401 the health endpoint — Phase 0's own exit criterion — forcing a
 > throwaway `permitAll` config that Phase 3 would delete.
 
-- [ ] Commit the Maven Wrapper (`mvnw`, `mvnw.cmd`, `.mvn/`)
-- [ ] Pin the toolchain in `pom.xml` (`<java.version>21</java.version>`) — `java` on PATH here is 23 while Maven follows `JAVA_HOME`; do not let them diverge silently
-- [ ] `application.yml`: port 8787, `spring.threads.virtual.enabled: true`, Flyway/Liquibase **off**
-- [ ] Health endpoint responding at `/actuator/health`
+- [x] Commit the Maven Wrapper (`mvnw`, `mvnw.cmd`, `.mvn/`)
+- [x] Pin the toolchain in `pom.xml` (`<java.version>21</java.version>`) — `java` on PATH here is 23 while Maven follows `JAVA_HOME`; do not let them diverge silently
+- [x] `application.yml`: port 8787, `spring.threads.virtual.enabled: true`, Flyway/Liquibase **off**
+- [x] Health endpoint responding at `/actuator/health`
 
 ### Shared
 
-- [ ] `contracts/messages/*.json` — one fixture per WebSocket message type
-- [ ] `.gitignore` covering Node, Electron, **Maven/Java**, and Windows
-- [ ] `.env.example`, `.editorconfig`, `.nvmrc`
-- [ ] GitHub config: CI workflow, PR template, issue templates, Dependabot
+- [x] `contracts/messages/*.json` — one fixture per WebSocket message type
+- [x] `.gitignore` covering Node, Electron, **Maven/Java**, and Windows
+- [x] `.env.example`, `.editorconfig`, `.nvmrc`
+- [x] GitHub config: CI workflow, PR template, issue templates, Dependabot
 
 ### Exit criterion
 
 `pnpm dev:server` starts Spring Boot on :8787 with `/actuator/health` returning `UP`; `pnpm dev:desktop` opens an Electron window rendering a placeholder. `pnpm typecheck` and `mvnw test` both pass clean.
+
+**Met.** `mvnw test` asserts `/actuator/health` returns `UP` on a random port; `pnpm typecheck` is clean; the Electron window renders.
 
 ---
 
@@ -89,13 +91,13 @@ Overlay Shell  Audio Capture           Backend + STT
 
 ### Tasks
 
-- [ ] `BrowserWindow`: `frame: false`, `transparent: true`, `alwaysOnTop: true`, `skipTaskbar: true`, `focusable: false`
-- [ ] `win.setContentProtection(true)` → `WDA_EXCLUDEFROMCAPTURE` on Windows
-- [ ] `win.setAlwaysOnTop(true, 'screen-saver')` so it floats above full-screen meeting apps
-- [ ] Detect Windows build at startup; warn if < 10 build 2004 (overlay renders **black** in captures instead of vanishing)
-- [ ] Register global hotkeys; unregister all on `will-quit`
-- [ ] Preload `contextBridge` — no `nodeIntegration`, no remote module
-- [ ] Overlay UI shell: transcript pane, answer pane, status pill, drag handle
+- [x] `BrowserWindow`: `frame: false`, `transparent: true`, `alwaysOnTop: true`, `skipTaskbar: true`, `focusable: false`
+- [x] `win.setContentProtection(true)` → `WDA_EXCLUDEFROMCAPTURE` on Windows
+- [x] `win.setAlwaysOnTop(true, 'screen-saver')` so it floats above full-screen meeting apps
+- [x] Detect Windows build at startup; warn if < 10 build 2004 (overlay renders **black** in captures instead of vanishing)
+- [x] Register global hotkeys; unregister all on `will-quit`
+- [x] Preload `contextBridge` — no `nodeIntegration`, no remote module
+- [x] Overlay UI shell: transcript pane, answer pane, status pill, drag handle
 
 `focusable: false` is what stops the overlay from stealing focus from the meeting window. Easy to miss, very visible when wrong.
 
@@ -112,6 +114,8 @@ Overlay Shell  Audio Capture           Backend + STT
 ### Exit criterion
 
 Join a Meet call from a second device and share your entire screen. The overlay is **fully absent** from the shared view on the second device while visible on yours. `Ctrl+\` toggles it; clicking the meeting window never loses focus to the overlay.
+
+**Not yet verified — this is a two-device manual test.** Everything it depends on is in place: the window flags, `setContentProtection(true)`, the `screen-saver` always-on-top level, and the build check (this machine is build 26200, well above 19041). Run the test before starting Phase 2.
 
 ---
 
