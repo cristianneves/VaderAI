@@ -1,0 +1,97 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+out/
+build/
+*.tsbuildinfo
+.vite/
+
+# Java / Maven
+target/
+*.class
+*.jar
+*.war
+*.ear
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.properties.bak
+release.properties
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+dependency-reduced-pom.xml
+buildNumber.properties
+HELP.md
+*.hprof
+hs_err_pid*
+replay_pid*
+
+# Electron packaging
+release/
+app-builds/
+*.exe
+*.msi
+*.nsis
+*.blockmap
+*.AppImage
+*.dmg
+
+# Environment — never commit real keys
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Test / coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# Caches
+.cache/
+.temp/
+.turbo/
+.eslintcache
+.parcel-cache/
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Local capture artifacts (audio debug dumps from Phase 2)
+*.wav
+!docs/**/*.wav
+captures/
+screenshots/
+
+# Supabase local dev
+supabase/.branches/
+supabase/.temp/

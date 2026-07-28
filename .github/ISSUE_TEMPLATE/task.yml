@@ -1,0 +1,36 @@
+name: Task
+description: A unit of work from the implementation plan
+labels: [task]
+body:
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase
+      options:
+        - '0 — Foundations'
+        - '1 — Overlay shell'
+        - '2 — Audio capture'
+        - '3 — Backend and transcription'
+        - '4 — Answer engine'
+        - '5 — Knowledge base'
+        - '6 — Practice mode'
+        - '7 — History and review'
+        - '8 — Packaging and release'
+        - 'Out of plan'
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of done
+      description: A check someone else could run. Not "make it work".
+    validations:
+      required: true

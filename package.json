@@ -1,0 +1,34 @@
+{
+  "name": "vaderai",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Real-time AI copilot for interviews and study sessions — TypeScript workspace (Electron desktop + shared protocol). The backend lives in apps/server and is a Java/Maven project, not a pnpm workspace member.",
+  "packageManager": "pnpm@11.17.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @vaderai/protocol build && concurrently -n server,desktop -c cyan,magenta \"pnpm dev:server\" \"pnpm dev:desktop\"",
+    "dev:server": "cd apps/server && .\\mvnw.cmd spring-boot:run",
+    "dev:desktop": "pnpm --filter @vaderai/protocol build && pnpm -F @vaderai/desktop dev",
+    "build": "pnpm -r build && pnpm build:server",
+    "build:server": "cd apps/server && .\\mvnw.cmd -B package",
+    "test:server": "cd apps/server && .\\mvnw.cmd -B test",
+    "typecheck": "pnpm --filter @vaderai/protocol build && pnpm -r typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "clean": "pnpm -r exec rimraf dist out && rimraf apps/server/target node_modules"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.4.2",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1"
+  }
+}

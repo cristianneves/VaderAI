@@ -1,0 +1,11 @@
+node_modules/
+dist/
+out/
+target/
+pnpm-lock.yaml
+.mvn/
+mvnw
+mvnw.cmd
+
+# Author-owned, not ours to reformat
+CLAUDE.md

@@ -1,0 +1,55 @@
+name: Bug report
+description: Something behaves differently than the plan says it should
+labels: [bug]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Desktop — overlay / window
+        - Desktop — audio capture
+        - Backend — WebSocket / session
+        - Backend — transcription
+        - Backend — answer engine
+        - Build / tooling
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: Quote the phase exit criterion if one applies.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows build
+      description: '`winver` — matters for content protection (needs 10 build 2004+)'
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      render: shell

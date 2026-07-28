@@ -1,0 +1,33 @@
+{
+  "ready": {
+    "type": "ready",
+    "sessionId": "6f1c9a2e-7b3d-4c8e-9f10-2a5b6c7d8e90"
+  },
+  "transcript": {
+    "type": "transcript",
+    "channel": 0,
+    "text": "Tell me about a time you handled a production incident.",
+    "isFinal": true
+  },
+  "answer_start": {
+    "type": "answer_start",
+    "answerId": "b2d4f6a8-1c3e-5079-8b1d-3f5a7c9e0b2d"
+  },
+  "answer_delta": {
+    "type": "answer_delta",
+    "answerId": "b2d4f6a8-1c3e-5079-8b1d-3f5a7c9e0b2d",
+    "text": "At Acme I was on call when"
+  },
+  "answer_end": {
+    "type": "answer_end",
+    "answerId": "b2d4f6a8-1c3e-5079-8b1d-3f5a7c9e0b2d"
+  },
+  "error": {
+    "type": "error",
+    "code": "unauthorized",
+    "message": "No valid hello frame within 5s"
+  },
+  "pong": {
+    "type": "pong"
+  }
+}

@@ -1,0 +1,12 @@
+# apps/server is a Java/Maven project and is deliberately NOT a member here.
+# Listing 'apps/*' would make pnpm try to manage it.
+packages:
+  - 'apps/desktop'
+  - 'packages/*'
+
+# pnpm 11 blocks postinstall scripts unless approved here. Electron needs its
+# to download the runtime binary; esbuild needs its to fetch the platform
+# binary. Without both, `electron-vite dev` cannot start.
+allowBuilds:
+  electron: true
+  esbuild: true

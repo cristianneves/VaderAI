@@ -1,0 +1,23 @@
+# Normalize to LF in the repo; check out as-is. Without this, Windows autocrlf
+# rewrites the mvnw shell script to CRLF and Linux CI dies on `bad interpreter`.
+* text=auto eol=lf
+
+# Windows-only scripts must keep CRLF or cmd.exe mis-parses them.
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Maven wrapper: the POSIX script is LF, its Windows twin is CRLF.
+mvnw     text eol=lf
+mvnw.cmd text eol=crlf
+
+# Binary — never touch line endings, never diff as text.
+*.png  binary
+*.jpg  binary
+*.ico  binary
+*.icns binary
+*.wav  binary
+*.jar  binary
+*.exe  binary
+
+# Generated — collapse in PR diffs and exclude from language stats.
+pnpm-lock.yaml linguist-generated=true -diff

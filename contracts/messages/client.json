@@ -1,0 +1,20 @@
+{
+  "hello": {
+    "type": "hello",
+    "protocolVersion": 1,
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.fixture.signature"
+  },
+  "ask": {
+    "type": "ask",
+    "trigger": "manual"
+  },
+  "screenshot": {
+    "type": "screenshot",
+    "mimeType": "image/png",
+    "dataBase64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    "note": "What is the time complexity of this solution?"
+  },
+  "ping": {
+    "type": "ping"
+  }
+}
