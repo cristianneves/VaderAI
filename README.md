@@ -2,7 +2,7 @@
 
 A real-time AI copilot for interviews and study sessions. VaderAI runs as an always-on-top desktop overlay on Windows that listens to your call, watches your screen, and streams answers only you can see.
 
-**Status:** pre-implementation. Architecture and stack are decided; no application code has been written yet.
+**Status:** Phase 1 of 8. The monorepo boots both apps and the desktop side is now a capture-invisible, hotkey-driven overlay shell. Audio capture (Phase 2) is next — there is no transcript or answer yet.
 
 ---
 
@@ -58,16 +58,32 @@ VaderAI/
 ├── apps/
 │   ├── desktop/        # Electron overlay      (pnpm workspace member)
 │   └── server/         # Spring Boot backend   (Maven — NOT a pnpm member)
-└── supabase/           # Migrations (Supabase CLI owns the schema)
+└── supabase/           # Migrations (Supabase CLI owns the schema) — Phase 3
 ```
 
-`apps/`, `packages/`, `contracts/`, and `supabase/` do not exist yet — they are created in Phase 0.
+Inside `apps/desktop/src`: `main/` (Electron main — window, hotkeys), `preload/` (the
+single `contextBridge` surface), `renderer/` (React overlay UI), `shared/` (types
+crossing all three).
+
+---
+
+## Hotkeys
+
+| Hotkey               | Action                            |
+| -------------------- | --------------------------------- |
+| `Ctrl+\``            | show / hide overlay               |
+| `Ctrl+Enter`         | ask now (manual trigger)          |
+| `Ctrl+H`             | screenshot + ask about the screen |
+| `Ctrl+Shift+↑/↓/←/→` | move overlay                      |
+| `Ctrl+Shift+C`       | clear answer panel                |
+
+`Ctrl+Enter`, `Ctrl+H`, and `Ctrl+Shift+C` are wired end to end but their handlers
+are placeholders until Phase 4. Hotkeys another app already owns are logged at
+startup rather than failing silently.
 
 ---
 
 ## Getting started
-
-Not yet runnable. Start at **Phase 0 — Foundations** in [`docs/002-implementation-phases.md`](docs/002-implementation-phases.md).
 
 **Local toolchain:**
 
@@ -86,7 +102,15 @@ pnpm install          # TypeScript side
 pnpm dev:server       # Spring Boot on :8787
 pnpm dev:desktop      # Electron overlay
 pnpm dev              # both
+
+pnpm typecheck        # tsc across the workspace
+pnpm test             # vitest (desktop)
+pnpm test:server      # mvnw test
 ```
+
+The overlay is transparent and frameless, so on first launch look for it in the
+top-left of your primary display — `Ctrl+Shift+↓/→` moves it. The status pill
+turns amber if this machine cannot hide it from screen capture.
 
 ---
 
