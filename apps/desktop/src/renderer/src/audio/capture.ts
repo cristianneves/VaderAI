@@ -8,6 +8,15 @@ const RESTART_DEBOUNCE_MS = 500;
 
 export type CaptureState = 'idle' | 'starting' | 'running' | 'error';
 
+export interface CaptureOptions {
+  /**
+   * Capture the mic only, leaving channel 0 silent. Practice mode has no other
+   * party to hear, so asking for loopback would put a screen-share picker in
+   * front of the user for a stream nothing reads.
+   */
+  micOnly?: boolean;
+}
+
 /**
  * Loopback audio is only granted alongside a video source, but we want audio
  * only — a live video track burns GPU for nothing.
@@ -28,26 +37,31 @@ export class AudioCapture {
   private context: AudioContext | null = null;
   private streams: MediaStream[] = [];
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Remembered so a device-change restart reacquires the same sources. */
+  private micOnly = false;
 
   constructor(
     private readonly onFrame: (frame: Int16Array) => void,
     private readonly onState: (state: CaptureState, detail?: string) => void,
   ) {}
 
-  async start(): Promise<void> {
+  async start(options: CaptureOptions = {}): Promise<void> {
     this.stop();
+    this.micOnly = options.micOnly ?? false;
     this.onState('starting');
 
     try {
-      const system = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-      stripVideoTracks(system);
+      const system = this.micOnly
+        ? null
+        : await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      if (system !== null) stripVideoTracks(system);
 
       const mic = await navigator.mediaDevices.getUserMedia({
         // Echo cancellation would subtract the interviewer's voice out of the
         // mic channel, which is exactly the signal we are trying to keep apart.
         audio: { echoCancellation: false, noiseSuppression: true },
       });
-      this.streams = [system, mic];
+      this.streams = system === null ? [mic] : [system, mic];
 
       // Asking for a 16 kHz context makes Chromium resample both sources for
       // us, so the worklet only has to frame what it is handed.
@@ -55,8 +69,12 @@ export class AudioCapture {
       this.context = context;
       await context.audioWorklet.addModule(WORKLET_URL);
 
+      // Always two channels, even with nothing on channel 0: an unconnected
+      // merger input is silence and the merger still declares two outputs, so
+      // the worklet's 2-channel guard and the 6400-byte frame format hold and
+      // the server's channel mapping needs no special case.
       const merger = context.createChannelMerger(2);
-      context.createMediaStreamSource(system).connect(merger, 0, 0);
+      if (system !== null) context.createMediaStreamSource(system).connect(merger, 0, 0);
       context.createMediaStreamSource(mic).connect(merger, 0, 1);
 
       const node = new AudioWorkletNode(context, PROCESSOR_NAME, {
@@ -112,6 +130,7 @@ export class AudioCapture {
 
   private scheduleRestart(): void {
     if (this.restartTimer !== null) clearTimeout(this.restartTimer);
-    this.restartTimer = setTimeout(() => void this.start(), RESTART_DEBOUNCE_MS);
+    const micOnly = this.micOnly;
+    this.restartTimer = setTimeout(() => void this.start({ micOnly }), RESTART_DEBOUNCE_MS);
   }
 }

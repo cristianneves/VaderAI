@@ -5,6 +5,7 @@ import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 
+import ai.vader.server.persistence.SessionKind;
 import ai.vader.server.persistence.SessionRow;
 import ai.vader.server.stt.SttProvider;
 import ai.vader.server.stt.SttProviderFactory;
@@ -70,7 +71,7 @@ class SessionWebSocketHandlerTest {
                         .build());
         given(jwtDecoder.decode("bad-token")).willThrow(new JwtException("bad signature"));
         given(transcripts.openSession(USER_ID))
-                .willReturn(new SessionRow(SESSION_ID, USER_ID, Instant.now(), null));
+                .willReturn(new SessionRow(SESSION_ID, USER_ID, SessionKind.LIVE, Instant.now(), null));
         given(sttProviders.create()).willReturn(new SttProvider() {
             @Override
             public void start(Listener listener) {}

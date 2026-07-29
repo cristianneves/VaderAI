@@ -2,6 +2,7 @@ package ai.vader.server.knowledge;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -36,6 +37,13 @@ public class KnowledgeService {
 
     public void delete(UUID userId, KnowledgeKind kind) {
         docs.findByUserIdAndKind(userId, kind).ifPresent(docs::delete);
+    }
+
+    /** One slot's text, for callers that need a specific document rather than the whole prefix. */
+    public Optional<String> content(UUID userId, KnowledgeKind kind) {
+        return docs.findByUserIdAndKind(userId, kind)
+                .map(KnowledgeDoc::content)
+                .filter(content -> !content.isBlank());
     }
 
     /**

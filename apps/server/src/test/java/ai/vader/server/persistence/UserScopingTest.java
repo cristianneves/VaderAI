@@ -29,7 +29,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 // Keep the configured datasource: an in-memory stand-in would not have the
 // Supabase auth schema these tables hang off, so it would prove nothing.
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(ai.vader.server.session.TranscriptService.class)
+// The conversions config is not optional here: sessions.kind is a checked text
+// column, and without the converter Spring Data writes the Java enum name and
+// the constraint rejects the insert.
+@Import({ai.vader.server.session.TranscriptService.class, ai.vader.server.config.JdbcConversionsConfig.class})
 // Fail fast rather than sitting on the default 30 s connect timeout where the
 // stack is not running, e.g. CI.
 @org.springframework.test.context.TestPropertySource(

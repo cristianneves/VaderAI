@@ -2,7 +2,7 @@
 
 A real-time AI copilot for interviews and study sessions. VaderAI runs as an always-on-top desktop overlay on Windows that listens to your call, watches your screen, and streams answers only you can see.
 
-**Status:** Phase 5 of 8. The overlay captures both audio channels, streams them to the backend, and renders a speaker-attributed transcript plus a streaming answer that fires on its own when the interviewer stops talking — grounded in a résumé, job description, and notes you supply. Provider keys (Deepgram, Anthropic) are needed to run it against the real services.
+**Status:** Phase 6 of 8. The overlay captures both audio channels, streams them to the backend, and renders a speaker-attributed transcript plus a streaming answer that fires on its own when the interviewer stops talking — grounded in a résumé, job description, and notes you supply. There is also a practice mode that runs a graded mock interview with no live call. Provider keys (Deepgram, Anthropic) are needed to run it against the real services.
 
 ---
 
@@ -67,7 +67,9 @@ session socket), `shared/` (types crossing all three).
 
 Inside `apps/server/src/main/java/ai/vader/server`: `config/` (security, WebSocket),
 `session/` (the `/v1/session` handler and per-connection state), `stt/` (provider
-interface + Deepgram), `persistence/` (Spring Data JDBC), `protocol/` (records
+interface + Deepgram), `llm/` (the streaming answer engine and the blocking
+schema-constrained one), `knowledge/` (the background documents), `practice/`
+(mock interviews), `persistence/` (Spring Data JDBC), `protocol/` (records
 mirroring the zod schemas).
 
 ### How an answer gets triggered
@@ -97,6 +99,39 @@ would change the cached prefix underneath a live conversation.
 Note that Claude Opus 5 does not cache a prefix under 512 tokens. The system
 prompt alone is ~306, so caching only engages once there is a real document in
 here.
+
+### Practice mode
+
+**Practice** in the overlay header runs a mock interview against the job
+description you saved: five questions, one at a time, answered out loud. Each
+answer is scored 1–5 on **structure**, **specificity**, and **relevance**, with
+one thing to fix and a rewrite of what you should have said. The closing report
+names the themes that cost you most across the whole session.
+
+It borrows the live pipeline wholesale — same socket, same speech-to-text, same
+`transcript_turns` rows — so a practice run shows up in history like any other
+session, tagged `sessions.kind = 'practice'`. Two things differ:
+
+- **Only the mic is captured.** Channel 0 is left unconnected, which is digital
+  silence, so there is no screen-share picker and the auto-ask path never arms.
+  The answer text is the channel-1 transcript the overlay already receives.
+- **Question generation, grading, and the report are blocking calls** with the
+  response shape enforced by the API (`output_config.format`), not requested in
+  the prompt. A half-parsed grade is worthless, so there is nothing to stream.
+
+All the calls in one run share a single cached prefix, so the five grades are
+cache reads rather than five cold writes — subject to the same 512-token floor
+as above.
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| `POST` | `/v1/practice/{sessionId}` | generate the question set (idempotent) |
+| `GET` | `/v1/practice/{sessionId}` | read it back |
+| `POST` | `/v1/practice/{sessionId}/{position}` | grade one spoken answer |
+| `GET` | `/v1/practice/{sessionId}/report` | scores, rewrites, weakest themes |
+
+Starting without a job description on file returns `409` and says so — there is
+nothing to write questions from.
 
 ### Security model
 

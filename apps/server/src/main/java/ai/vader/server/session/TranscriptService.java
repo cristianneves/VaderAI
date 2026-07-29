@@ -35,6 +35,11 @@ public class TranscriptService {
         sessions.findByIdAndUserId(sessionId, userId).map(SessionRow::ended).ifPresent(sessions::save);
     }
 
+    /** No-ops for a session the user does not own — that is the authorization check. */
+    public void markPractice(UUID sessionId, UUID userId) {
+        sessions.findByIdAndUserId(sessionId, userId).map(SessionRow::asPractice).ifPresent(sessions::save);
+    }
+
     /** Batched by the caller — turns are never written one word at a time. */
     public void saveTurns(List<TranscriptTurn> batch) {
         if (!batch.isEmpty()) turns.saveAll(batch);
