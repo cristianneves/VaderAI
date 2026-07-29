@@ -1,6 +1,6 @@
 # 002 — MVP Implementation Phases
 
-**Status:** approved — Phases 0–5 done (see each exit criterion for what is still a manual check), Phase 6 next
+**Status:** approved — Phases 0–6 done (see each exit criterion for what is still a manual check), Phase 7 next
 **Scope:** Windows-only MVP — working app, no billing
 **Backend:** Java 21 + Spring Boot 3.4 (Maven)
 **Total estimate:** ~12–16 days
@@ -36,7 +36,7 @@ Overlay Shell  Audio Capture           Backend + STT
                           Phase 8  Packaging
 ```
 
-**Parallelizable:** Phases 1, 2, and 3 are independent after Phase 0 — and now split cleanly by language, so a second person can take the Java track (Phase 3) while the first does the Electron track (Phases 1–2). Solo, run them in the order given; Phase 2 carries the most risk and must not be deferred. Phases 5, 6, and 7 are independent of each other.
+**Parallelizable:** Phases 1, 2, and 3 are independent after Phase 0 — and now split cleanly by language, so a second person can take the Java track (Phase 3) while the first does the Electron track (Phases 1–2). Solo, run them in the order given; Phase 2 carries the most risk and must not be deferred. Phases 6 and 7 are independent of each other, but Phase 6 turned out to need Phase 5 — a mock interview has nothing to ask about without the stored job description.
 
 ---
 
@@ -300,21 +300,75 @@ asserts one user's `assemble` never returns another's text).
 ## Phase 6 — Practice mode
 
 **Goal:** mock interviews with graded feedback, no live call.
-**Estimate:** 1–2 days · **Risk:** low · **Depends on:** Phase 4
+**Estimate:** 1–2 days · **Risk:** low · **Depends on:** Phases 4 and 5 (the stored job description)
 
 Same STT and LLM pipeline, different orchestration. Cheap to build, and it is the version of the product you can show anyone.
 
 ### Tasks
 
-- [ ] Generate a question set from the stored job description
-- [ ] Present one question at a time; record the spoken answer via the mic channel only
-- [ ] Grade each answer against the job description — structure, specificity, relevance
-- [ ] Session report: per-question scores, concrete rewrites, weakest themes
-- [ ] Persist practice sessions in history
+- [x] Generate a question set from the stored job description
+- [x] Present one question at a time; record the spoken answer via the mic channel only
+- [x] Grade each answer against the job description — structure, specificity, relevance
+- [x] Session report: per-question scores, concrete rewrites, weakest themes
+- [x] Persist practice sessions in history
+
+Orchestration is REST (`/v1/practice/**`); audio keeps flowing over the existing
+`/v1/session` socket, so **the protocol is unchanged** — no new message type, no
+new fixture, no contract-test edit on either side. The client builds each answer
+from the channel-1 `transcript` messages it already receives.
+
+Two notes on the design, both deliberate:
+
+- **Nothing in the live path needed changing.** `TurnDetector` arms only on
+  channel-0 finals, and channel 0 is silent in practice mode, so the auto-ask
+  path never fires without being suppressed.
+- **Grading needs a blocking, structured call**, which `AnswerEngine` does not
+  do — it only streams. `JsonEngine` is the second port, with the response shape
+  enforced by the API rather than requested in the prompt.
 
 ### Exit criterion
 
 Complete a 5-question mock interview and receive per-question feedback that identifies a real weakness in a deliberately vague answer.
+
+**Plumbing verified; whether the feedback is any good needs a real key.** End to
+end against the local stack: a real sign-up minted an ES256 token, the session
+socket answered `ready`, and `POST /v1/practice/{sessionId}` **without** a stored
+job description returned `409` with an actionable message rather than an empty
+question set. With one stored, five questions came back, a retry returned the
+same five (one model call, not two — the unique index on
+`(session_id, position)` backs that up), a deliberately vague answer graded
+2/1/4 with a rewrite, and the report returned two themes. Postgres afterwards
+held `sessions.kind = 'practice'` and exactly five `practice_questions` rows,
+one graded. A second user asking for that report got `404`.
+
+The requests the server actually sent were checked on the wire: all three carried
+a **byte-identical** cached prefix with the 1-hour breakpoint on the last system
+block, `output_config.format.type = "json_schema"` with the schema, `max_tokens`
+4096 (not the streaming engine's 1024 — the budget covers thinking too), and no
+`effort` override. The vague answer appeared in the user turn and **not** in the
+cached prefix.
+
+Not covered, and worth being plain about:
+
+- **Whether the grading is actually useful.** The model was a local stand-in
+  replaying canned JSON, so what is proven is the orchestration and the request
+  shape, not the judgement. Set `ANTHROPIC_API_KEY` and re-run the
+  deliberately-vague-answer case to close this.
+- **The mic-only capture path.** `AudioCapture.start` has no test — the node test
+  environment has no `AudioContext` — so `{ micOnly: true }` inherits that gap.
+  Leaving merger input 0 unconnected should give digital silence on channel 0
+  while the merger still declares two output channels, which is what keeps the
+  worklet's `input.length < 2` guard and the 6400-byte frame format intact. That
+  follows from the Web Audio spec but has not been run: **check that channel 0 is
+  silent and no screen-share picker appears** during the manual run.
+
+> ⚠️ **The caching win is real but conditional, same as Phase 5's.** With the
+> one-line test documents the cached prefix measured only ~260 tokens — well
+> under Claude Opus 5's 512-token minimum, so the breakpoint was sent and
+> ignored. The practice system prompt is ~190 tokens, shorter than the live one's
+> ~306, so it leans harder on the documents than the live path does. A real job
+> description plus a one-page résumé clears the floor comfortably; a two-line job
+> description will not.
 
 ---
 
