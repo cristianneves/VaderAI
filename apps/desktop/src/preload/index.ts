@@ -9,6 +9,8 @@ const api = {
   platform: process.platform,
   getCaptureProtection: (): Promise<CaptureProtection> =>
     ipcRenderer.invoke('overlay:capture-protection'),
+  /** Writes a finished WAV to disk and resolves with its path. Debug only. */
+  dumpWav: (bytes: Uint8Array): Promise<string> => ipcRenderer.invoke('audio:dump-wav', bytes),
   /** Subscribes to hotkey actions main forwards. Returns an unsubscribe fn. */
   onOverlayAction: (handler: (action: OverlayAction) => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, action: OverlayAction): void => handler(action);

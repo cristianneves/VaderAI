@@ -1,6 +1,6 @@
 # 002 — MVP Implementation Phases
 
-**Status:** approved — Phase 0 done, Phase 1 code done (see its exit criterion), Phase 2 next
+**Status:** approved — Phases 0–2 done (see each exit criterion for what is still a manual check), Phase 3 next
 **Scope:** Windows-only MVP — working app, no billing
 **Backend:** Java 21 + Spring Boot 3.4 (Maven)
 **Total estimate:** ~12–16 days
@@ -128,20 +128,35 @@ This is the foundation of the entire product. If loopback capture doesn't work, 
 
 ### Tasks
 
-- [ ] Pin Electron **≥39** (native loopback; below 39 it silently does not work)
-- [ ] Main: `setDisplayMediaRequestHandler` returning `{ video: screen, audio: 'loopback' }`
-- [ ] Renderer: `getDisplayMedia({ video: true, audio: true })`, then **immediately stop and remove every video track** — we want audio only, and a live video track burns GPU for nothing
-- [ ] Renderer: `getUserMedia` for mic with `echoCancellation: false`, `noiseSuppression: true`
-- [ ] Route both into one `AudioContext` via `ChannelMergerNode` — ch0 = system, ch1 = mic
-- [ ] `AudioWorkletProcessor`: resample to 16 kHz, interleave, emit PCM16 in 100 ms frames (**6400 bytes** each)
-- [ ] Device-change and stream-end handling; reacquire on default-device switch
-- [ ] Debug utility: dump N seconds of captured PCM to a WAV on disk
+- [x] Pin Electron **≥39** (native loopback; below 39 it silently does not work)
+- [x] Main: `setDisplayMediaRequestHandler` returning `{ video: screen, audio: 'loopback' }`
+- [x] Renderer: `getDisplayMedia({ video: true, audio: true })`, then **immediately stop and remove every video track** — we want audio only, and a live video track burns GPU for nothing
+- [x] Renderer: `getUserMedia` for mic with `echoCancellation: false`, `noiseSuppression: true`
+- [x] Route both into one `AudioContext` via `ChannelMergerNode` — ch0 = system, ch1 = mic
+- [x] `AudioWorkletProcessor`: resample to 16 kHz, interleave, emit PCM16 in 100 ms frames (**6400 bytes** each) — resampling is done by asking for a 16 kHz `AudioContext`, and the interleave/PCM16 step sits next to the worklet rather than inside it so it can be unit tested; frames on the wire are unchanged
+- [x] Device-change and stream-end handling; reacquire on default-device switch
+- [x] Debug utility: dump N seconds of captured PCM to a WAV on disk
 
 The 2-channel merge makes speaker attribution exact and free downstream — no diarization model, no heuristics. Anything that flattens this to mono destroys attribution in Phase 3.
 
 ### Exit criterion
 
 Play a YouTube video in a browser while speaking into the mic. Dump 10 s to WAV, open in Audacity: channel 0 contains only the video, channel 1 contains only your voice, no bleed.
+
+**Partly verified — the speaking half needs you.** Automated checks on this machine:
+a 440 Hz tone played through the speakers was captured on channel 0 at 16 kHz /
+2 ch / 16-bit, 85 frames over 8.5 s (exactly 10 frames per second, 6400 bytes
+each), with channel 1 at digital zero — so system audio does not bleed into the
+mic channel. Feeding two known tones through the real merger and worklet gives
+440 Hz only on ch0 and 1000 Hz only on ch1, with zero energy at the other
+frequency in each.
+
+Not covered: real mic content on channel 1. **This machine's default input device
+is `fifine - Microphone (fifine Virtual Audio Device)`, a virtual mixer endpoint
+that currently outputs near-silence** (peak 6.6e-6, below the PCM16 floor) — the
+physical capsule is a different device, `Microfone (fifine Microphone)`. The mic
+track itself is live and flowing. If the dump shows an empty channel 1, change
+the Windows default recording device before assuming the capture is broken.
 
 ---
 

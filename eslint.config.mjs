@@ -16,6 +16,13 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // AudioWorklet modules run in their own global scope, not the window's.
+    files: ['**/public/*-worklet.js'],
+    languageOptions: {
+      globals: { AudioWorkletProcessor: 'readonly', registerProcessor: 'readonly' },
+    },
+  },
+  {
     rules: {
       '@typescript-eslint/no-unused-vars': [
         'error',
