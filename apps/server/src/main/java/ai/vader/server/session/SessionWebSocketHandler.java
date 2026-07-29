@@ -2,6 +2,7 @@ package ai.vader.server.session;
 
 import ai.vader.server.llm.AnswerEngine;
 import ai.vader.server.llm.AnswerRequest;
+import ai.vader.server.knowledge.KnowledgeService;
 import ai.vader.server.prompt.PromptAssembler;
 import ai.vader.server.protocol.ClientMessage;
 import ai.vader.server.protocol.ServerMessage;
@@ -60,6 +61,7 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
     private final JwtDecoder jwtDecoder;
     private final SttProviderFactory sttProviders;
     private final TranscriptService transcripts;
+    private final KnowledgeService knowledge;
     private final AnswerEngine answers;
     private final PromptAssembler prompts;
     private final ObjectMapper json;
@@ -68,12 +70,14 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
             JwtDecoder jwtDecoder,
             SttProviderFactory sttProviders,
             TranscriptService transcripts,
+            KnowledgeService knowledge,
             AnswerEngine answers,
             PromptAssembler prompts,
             ObjectMapper json) {
         this.jwtDecoder = jwtDecoder;
         this.sttProviders = sttProviders;
         this.transcripts = transcripts;
+        this.knowledge = knowledge;
         this.answers = answers;
         this.prompts = prompts;
         this.json = json;
@@ -166,7 +170,7 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
 
         UUID sessionId = transcripts.openSession(userId).id();
         SttProvider stt = sttProviders.create();
-        live.authenticated(userId, sessionId, stt);
+        live.authenticated(userId, sessionId, stt, knowledge.assemble(userId));
         stt.start(new SttProvider.Listener() {
             @Override
             public void onTranscript(TranscriptEvent event) {

@@ -2,7 +2,7 @@
 
 A real-time AI copilot for interviews and study sessions. VaderAI runs as an always-on-top desktop overlay on Windows that listens to your call, watches your screen, and streams answers only you can see.
 
-**Status:** Phase 4 of 8 — the minimum demoable product is complete. The overlay captures both audio channels, streams them to the backend, and renders a speaker-attributed transcript plus a streaming answer that fires on its own when the interviewer stops talking. Provider keys (Deepgram, Anthropic) are needed to run it against the real services.
+**Status:** Phase 5 of 8. The overlay captures both audio channels, streams them to the backend, and renders a speaker-attributed transcript plus a streaming answer that fires on its own when the interviewer stops talking — grounded in a résumé, job description, and notes you supply. Provider keys (Deepgram, Anthropic) are needed to run it against the real services.
 
 ---
 
@@ -80,10 +80,23 @@ and `Ctrl+H` attaches a 1080p grab of the screen. A new trigger cancels an
 answer still streaming.
 
 The prompt is split at its cache boundary: system prompt and knowledge base go
-in a cached prefix with a one-hour TTL, and the transcript goes after it. Note
-that Claude Opus 5 does not cache a prefix under 512 tokens — until the Phase 5
-knowledge base lands, the prefix is too short and `cacheReadInputTokens` stays
-zero.
+in a cached prefix with a one-hour TTL, and the transcript goes after it.
+
+### Background (the knowledge base)
+
+**Background** in the overlay header holds three slots — résumé, job description,
+notes. Paste text or upload a `.pdf`, `.docx`, `.txt`, or `.md`; extraction runs
+server-side so the parsers stay on one platform. The screen shows the token
+count and warns past 8,000, where the prefix starts costing more than it adds.
+
+This is what separates _"at Acme I cut deploy time from 40 minutes to 6"_ from
+generic advice, and it is the highest-leverage thing to fill in. It is read
+**when a session starts**, so reconnect after editing — re-reading it mid-session
+would change the cached prefix underneath a live conversation.
+
+Note that Claude Opus 5 does not cache a prefix under 512 tokens. The system
+prompt alone is ~306, so caching only engages once there is a real document in
+here.
 
 ### Security model
 
@@ -109,9 +122,8 @@ every repository call takes the user id from the verified JWT, and
 | `Ctrl+Shift+↑/↓/←/→` | move overlay                      |
 | `Ctrl+Shift+C`       | clear answer panel                |
 
-`Ctrl+Enter`, `Ctrl+H`, and `Ctrl+Shift+C` are wired end to end but their handlers
-are placeholders until Phase 4. Hotkeys another app already owns are logged at
-startup rather than failing silently.
+Hotkeys another app already owns are logged at startup rather than failing
+silently.
 
 ---
 

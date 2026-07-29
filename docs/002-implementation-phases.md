@@ -1,6 +1,6 @@
 # 002 — MVP Implementation Phases
 
-**Status:** approved — Phases 0–4 done (see each exit criterion for what is still a manual check), Phase 5 next
+**Status:** approved — Phases 0–5 done (see each exit criterion for what is still a manual check), Phase 6 next
 **Scope:** Windows-only MVP — working app, no billing
 **Backend:** Java 21 + Spring Boot 3.4 (Maven)
 **Total estimate:** ~12–16 days
@@ -264,18 +264,36 @@ Both need `ANTHROPIC_API_KEY`.
 
 ### Tasks
 
-- [ ] Settings screen: upload/paste résumé, job description, free-form notes
-- [ ] Extract text from PDF and DOCX server-side (Apache PDFBox + Apache POI)
-- [ ] Store in `knowledge_docs`, scoped per user
-- [ ] Inject into the cached system prompt block on session start
-- [ ] Show token count and warn above a sane ceiling (~8k)
-- [ ] Verify the cache still hits after a knowledge-base edit (new prefix → one cold write, then reads)
+- [x] Settings screen: upload/paste résumé, job description, free-form notes
+- [x] Extract text from PDF and DOCX server-side (Apache PDFBox + Apache POI)
+- [x] Store in `knowledge_docs`, scoped per user
+- [x] Inject into the cached system prompt block on session start
+- [x] Show token count and warn above a sane ceiling (~8k)
+- [ ] Verify the cache still hits after a knowledge-base edit (new prefix → one cold write, then reads) — **needs a real key; the prefix change itself is covered by a test**
 
 This is what separates _"at your role at Acme you cut deploy time from 40 to 6 minutes"_ from generic advice — the highest-leverage feature in the product.
 
 ### Exit criterion
 
 Upload a résumé, ask a behavioral question, and the answer cites a specific project from it by name.
+
+**Plumbing verified; whether the answer cites the project needs a real key.**
+End to end against the local stack: a pasted résumé stored (`204`), notes
+uploaded as a file and extracted server-side (`200`, text intact through UTF-8),
+an `image/png` upload refused with `415` rather than stored as binary noise, and
+the assembled block read back with a token count. Triggering an answer then put
+the résumé **and** the notes in the cached system prefix, with neither leaking
+into the volatile half.
+
+**This also clears the Phase 4 caching blocker.** The cached prefix measured
+~530 tokens with a one-page résumé, over Claude Opus 5's 512-token minimum — so
+prompt caching can now actually engage, where in Phase 4 the breakpoint was sent
+and ignored. Note it is only just over: a very short résumé plus the ~306-token
+system prompt could still fall under the line.
+
+Two things are database-enforced rather than trusted to the service: one document
+per kind per user (a unique index), and cross-user isolation (`KnowledgeServiceTest`
+asserts one user's `assemble` never returns another's text).
 
 ---
 

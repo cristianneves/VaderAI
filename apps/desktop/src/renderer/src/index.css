@@ -174,3 +174,61 @@ button:disabled {
 .cursor {
   color: #86e0b0;
 }
+
+.settings {
+  overflow-y: auto;
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.settings-head h2 {
+  margin: 0;
+  flex: 1;
+}
+
+.knowledge-slot {
+  margin-top: 12px;
+}
+
+.knowledge-slot label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.knowledge-slot textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #3a3a4c;
+  border-radius: 6px;
+  background: #1a1a24;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.knowledge-slot .row {
+  margin-top: 6px;
+}
+
+.warn-text {
+  color: #ffc98a;
+}
+
+button.link {
+  -webkit-app-region: no-drag;
+  padding: 2px 6px;
+  border: none;
+  background: none;
+  color: #8a8aa0;
+  font-size: 11px;
+  text-decoration: underline;
+}

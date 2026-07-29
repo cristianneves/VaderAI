@@ -22,3 +22,8 @@ export const supabase: SupabaseClient | null =
 
 export const serverWsUrl =
   (import.meta.env['VITE_SERVER_WS_URL'] as string | undefined) ?? 'ws://localhost:8787/v1/session';
+
+/** Same backend, REST side. Derived from the socket URL unless set explicitly. */
+export const serverHttpUrl =
+  (import.meta.env['VITE_SERVER_HTTP_URL'] as string | undefined) ??
+  serverWsUrl.replace(/^ws/, 'http').replace(/\/v1\/session$/, '');
