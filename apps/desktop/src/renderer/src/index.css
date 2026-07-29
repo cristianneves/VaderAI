@@ -80,3 +80,39 @@ h2 {
   margin: 0;
   color: #8a8aa0;
 }
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(18, 18, 26, 0.82);
+}
+
+button {
+  padding: 4px 10px;
+  border: 1px solid #3a3a4c;
+  border-radius: 6px;
+  background: #23232f;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.meta {
+  color: #8a8aa0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.path {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

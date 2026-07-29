@@ -2,7 +2,7 @@
 
 A real-time AI copilot for interviews and study sessions. VaderAI runs as an always-on-top desktop overlay on Windows that listens to your call, watches your screen, and streams answers only you can see.
 
-**Status:** Phase 1 of 8. The monorepo boots both apps and the desktop side is now a capture-invisible, hotkey-driven overlay shell. Audio capture (Phase 2) is next — there is no transcript or answer yet.
+**Status:** Phase 2 of 8. The overlay is capture-invisible and hotkey-driven, and it now captures system audio and the mic as one 16 kHz 2-channel PCM16 stream. Nothing is transcribed or answered yet — the backend pipeline is Phase 3.
 
 ---
 
@@ -111,6 +111,17 @@ pnpm test:server      # mvnw test
 The overlay is transparent and frameless, so on first launch look for it in the
 top-left of your primary display — `Ctrl+Shift+↓/→` moves it. The status pill
 turns amber if this machine cannot hide it from screen capture.
+
+### Checking the audio capture
+
+**Start listening** merges system audio into channel 0 and the mic into channel 1
+of a single 16 kHz PCM16 stream, in 100 ms / 6400-byte frames. **Dump 10s WAV**
+writes the last ten seconds to `Downloads/vaderai-capture.wav`; open it in
+Audacity and the two channels should hold the two sources with no bleed.
+
+An empty channel 1 usually means Windows' **default** recording device is not the
+mic you are speaking into — virtual mixer endpoints often sit at digital silence.
+The capture always follows the system default and re-acquires when it changes.
 
 ---
 
