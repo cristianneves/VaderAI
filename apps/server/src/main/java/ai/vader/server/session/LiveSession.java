@@ -47,6 +47,7 @@ final class LiveSession {
     private volatile UUID userId;
     private volatile UUID sessionId;
     private volatile SttProvider stt;
+    private volatile String knowledgeBase = "";
     private volatile ScheduledFuture<?> authDeadline;
 
     LiveSession(
@@ -74,9 +75,7 @@ final class LiveSession {
         cancelInFlight();
 
         UUID answerId = UUID.randomUUID();
-        // The knowledge base is empty until Phase 5; the cached prefix is already
-        // shaped to hold it.
-        var request = prompts.assemble(recent.snapshot(), "", image);
+        var request = prompts.assemble(recent.snapshot(), knowledgeBase, image);
         send(new ServerMessage.AnswerStart(answerId));
 
         inFlight.set(answers.stream(request, new AnswerEngine.Listener() {
@@ -111,10 +110,16 @@ final class LiveSession {
         if (previous != null) previous.close();
     }
 
-    void authenticated(UUID userId, UUID sessionId, SttProvider stt) {
+    /**
+     * The knowledge base is captured once, here. Re-reading it mid-session would
+     * change the cached prompt prefix underneath a live conversation and throw
+     * the cache away; an edit takes effect on the next session instead.
+     */
+    void authenticated(UUID userId, UUID sessionId, SttProvider stt, String knowledgeBase) {
         this.userId = userId;
         this.sessionId = sessionId;
         this.stt = stt;
+        this.knowledgeBase = knowledgeBase;
         if (authDeadline != null) authDeadline.cancel(false);
     }
 

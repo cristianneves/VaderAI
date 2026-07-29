@@ -8,6 +8,7 @@ import { encodeWav, FrameBuffer } from './audio/pcm';
 import { SignIn } from './auth/SignIn';
 import { serverWsUrl, supabase } from './auth/supabase';
 import { SessionSocket, type ConnectionState } from './net/session';
+import { Settings } from './settings/Settings';
 import { applyTranscript, speakerOf, type TranscriptLine } from './transcript/log';
 
 const DUMP_SECONDS = 10;
@@ -23,6 +24,7 @@ export function App(): React.JSX.Element {
   const [connection, setConnection] = useState<ConnectionState>('idle');
   const [lines, setLines] = useState<TranscriptLine[]>([]);
   const [answer, setAnswer] = useState<AnswerState>(NO_ANSWER);
+  const [showSettings, setShowSettings] = useState(false);
 
   const frames = useRef(new FrameBuffer(DUMP_SECONDS * FRAMES_PER_SECOND));
   const socket = useRef<SessionSocket | null>(null);
@@ -121,6 +123,9 @@ export function App(): React.JSX.Element {
     <div className="overlay">
       <header className="handle">
         <span className="title">VaderAI</span>
+        <button className="link" onClick={() => setShowSettings((open) => !open)}>
+          {showSettings ? 'Close' : 'Background'}
+        </button>
         <span
           className={`pill ${capture?.supported ? 'ok' : 'warn'}`}
           title={capture?.supported ? undefined : capture?.warning}
@@ -133,32 +138,40 @@ export function App(): React.JSX.Element {
         </span>
       </header>
 
-      <section className="pane transcript">
-        <h2>Transcript</h2>
-        {lines.length === 0 ? (
-          <p className="empty">
-            {listening ? 'Listening…' : 'No audio yet — press Start listening.'}
-          </p>
-        ) : (
-          lines.map((line, index) => (
-            <p key={index} className={`line ${line.isFinal ? '' : 'interim'}`}>
-              <span className={`speaker ch${line.channel}`}>{speakerOf(line.channel)}</span>
-              {line.text}
-            </p>
-          ))
-        )}
-      </section>
+      {showSettings ? (
+        <Settings accessToken={session.access_token} onClose={() => setShowSettings(false)} />
+      ) : (
+        <>
+          <section className="pane transcript">
+            <h2>Transcript</h2>
+            {lines.length === 0 ? (
+              <p className="empty">
+                {listening ? 'Listening…' : 'No audio yet — press Start listening.'}
+              </p>
+            ) : (
+              lines.map((line, index) => (
+                <p key={index} className={`line ${line.isFinal ? '' : 'interim'}`}>
+                  <span className={`speaker ch${line.channel}`}>{speakerOf(line.channel)}</span>
+                  {line.text}
+                </p>
+              ))
+            )}
+          </section>
 
-      <section className="pane answer">
-        <h2>Answer{answer.streaming && <span className="cursor"> ▍</span>}</h2>
-        {answer.text === '' ? (
-          <p className="empty">
-            {answer.streaming ? 'Thinking…' : 'Ctrl+Enter to ask · Ctrl+H to ask about the screen'}
-          </p>
-        ) : (
-          <p className="answer-text">{answer.text}</p>
-        )}
-      </section>
+          <section className="pane answer">
+            <h2>Answer{answer.streaming && <span className="cursor"> ▍</span>}</h2>
+            {answer.text === '' ? (
+              <p className="empty">
+                {answer.streaming
+                  ? 'Thinking…'
+                  : 'Ctrl+Enter to ask · Ctrl+H to ask about the screen'}
+              </p>
+            ) : (
+              <p className="answer-text">{answer.text}</p>
+            )}
+          </section>
+        </>
+      )}
 
       <footer className="controls">
         <button onClick={() => (listening ? stopListening() : void startListening())}>
