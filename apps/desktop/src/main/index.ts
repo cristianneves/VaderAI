@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { registerDisplayMediaHandler } from './display-media';
 import { registerHotkeys } from './hotkeys';
 import { createOverlayWindow, moveOverlay, toggleOverlay } from './overlay-window';
+import { captureScreen } from './screenshot';
 import { checkCaptureProtection } from './windows-support';
 import type { OverlayAction } from '../shared/overlay';
 
@@ -31,6 +32,8 @@ void app.whenReady().then(() => {
 
   const window = createOverlayWindow();
   ipcMain.handle('overlay:capture-protection', () => capture);
+
+  ipcMain.handle('overlay:screenshot', () => captureScreen());
 
   // Phase 2 debug utility: the renderer hands over a finished WAV, we only
   // put it somewhere the user can open it.

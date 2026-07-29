@@ -12,3 +12,9 @@ export type OverlayAction =
   | { readonly type: 'move'; readonly dx: number; readonly dy: number };
 
 export type CaptureProtection = { supported: true } | { supported: false; warning: string };
+
+/** A downsampled screen grab, ready to go straight into a protocol message. */
+export interface ScreenshotCapture {
+  mimeType: 'image/png';
+  dataBase64: string;
+}

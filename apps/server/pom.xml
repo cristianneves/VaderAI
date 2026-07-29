@@ -69,6 +69,12 @@
       <artifactId>okhttp</artifactId>
       <version>${okhttp.version}</version>
     </dependency>
+    <!-- Phase 4: the answer engine. -->
+    <dependency>
+      <groupId>com.anthropic</groupId>
+      <artifactId>anthropic-java</artifactId>
+      <version>2.52.0</version>
+    </dependency>
 
     <dependency>
       <groupId>org.springframework.boot</groupId>

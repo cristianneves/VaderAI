@@ -1,13 +1,18 @@
 package ai.vader.server.session;
 
+import ai.vader.server.llm.AnswerEngine;
+import ai.vader.server.llm.AnswerRequest;
+import ai.vader.server.prompt.PromptAssembler;
 import ai.vader.server.protocol.ClientMessage;
 import ai.vader.server.protocol.ServerMessage;
 import ai.vader.server.protocol.ServerMessage.ErrorCode;
 import ai.vader.server.stt.SttProvider;
 import ai.vader.server.stt.SttProviderFactory;
 import ai.vader.server.stt.TranscriptEvent;
+import ai.vader.server.turn.TurnDetector;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -55,23 +60,29 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
     private final JwtDecoder jwtDecoder;
     private final SttProviderFactory sttProviders;
     private final TranscriptService transcripts;
+    private final AnswerEngine answers;
+    private final PromptAssembler prompts;
     private final ObjectMapper json;
 
     SessionWebSocketHandler(
             JwtDecoder jwtDecoder,
             SttProviderFactory sttProviders,
             TranscriptService transcripts,
+            AnswerEngine answers,
+            PromptAssembler prompts,
             ObjectMapper json) {
         this.jwtDecoder = jwtDecoder;
         this.sttProviders = sttProviders;
         this.transcripts = transcripts;
+        this.answers = answers;
+        this.prompts = prompts;
         this.json = json;
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         var socket = new ConcurrentWebSocketSessionDecorator(session, SEND_TIME_LIMIT_MS, SEND_BUFFER_LIMIT_BYTES);
-        var live = new LiveSession(socket, json, transcripts);
+        var live = new LiveSession(socket, json, transcripts, answers, prompts);
         sessions.put(session.getId(), live);
         live.awaitAuth(timers.schedule(
                 () -> closeUnauthenticated(session), AUTH_DEADLINE_SECONDS, TimeUnit.SECONDS));
@@ -93,10 +104,16 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
         switch (parsed) {
             case ClientMessage.Hello hello -> onHello(session, live, hello);
             case ClientMessage.Ping ignored -> live.send(new ServerMessage.Pong());
-            // Triggering an answer is Phase 4; the messages are accepted now so
-            // the client can be written against the final protocol.
-            case ClientMessage.Ask ignored -> requireAuth(session, live);
-            case ClientMessage.Screenshot ignored -> requireAuth(session, live);
+            case ClientMessage.Ask ignored -> {
+                if (!requireAuth(session, live)) return;
+                live.turns().recordManualAsk(System.currentTimeMillis());
+                live.ask(Optional.empty());
+            }
+            case ClientMessage.Screenshot shot -> {
+                if (!requireAuth(session, live)) return;
+                live.turns().recordManualAsk(System.currentTimeMillis());
+                live.ask(Optional.of(new AnswerRequest.ImageInput(shot.mimeType(), shot.dataBase64())));
+            }
         }
     }
 
@@ -118,6 +135,7 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
 
         var deadline = live.authDeadline();
         if (deadline != null) deadline.cancel(false);
+        live.cancelInFlight();
         if (live.stt() != null) live.stt().close();
         live.flush();
         if (live.isAuthenticated()) transcripts.closeSession(live.sessionId(), live.userId());
@@ -153,7 +171,20 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
             @Override
             public void onTranscript(TranscriptEvent event) {
                 live.send(new ServerMessage.Transcript(event.channel(), event.text(), event.isFinal()));
-                if (event.isFinal()) live.recordFinal(event);
+                long now = System.currentTimeMillis();
+                live.turns().onTranscript(event.channel(), event.isFinal(), now);
+                if (!event.isFinal()) return;
+
+                live.recordFinal(event);
+                if (event.channel() != TranscriptEvent.CHANNEL_INTERVIEWER) return;
+                // Re-check once the silence window has passed. Anything the user
+                // says in the meantime disarms it inside the detector.
+                timers.schedule(
+                        () -> {
+                            if (live.turns().pollAutoAsk(System.currentTimeMillis())) live.ask(Optional.empty());
+                        },
+                        TurnDetector.SILENCE_MS,
+                        TimeUnit.MILLISECONDS);
             }
 
             @Override
@@ -165,10 +196,11 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
         live.send(new ServerMessage.Ready(sessionId));
     }
 
-    private void requireAuth(WebSocketSession session, LiveSession live) {
-        if (live.isAuthenticated()) return;
+    private boolean requireAuth(WebSocketSession session, LiveSession live) {
+        if (live.isAuthenticated()) return true;
         live.send(new ServerMessage.Failure(ErrorCode.UNAUTHORIZED, "hello first"));
         close(session, CloseStatus.POLICY_VIOLATION.withReason("not authenticated"));
+        return false;
     }
 
     private void closeUnauthenticated(WebSocketSession session) {

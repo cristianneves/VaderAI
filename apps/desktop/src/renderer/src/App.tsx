@@ -1,7 +1,8 @@
 import { AUDIO_FRAME_MS } from '@vaderai/protocol';
 import type { Session } from '@supabase/supabase-js';
 import { useEffect, useRef, useState } from 'react';
-import type { CaptureProtection, OverlayAction } from '../../shared/overlay';
+import type { CaptureProtection } from '../../shared/overlay';
+import { applyAnswer, NO_ANSWER, type AnswerState } from './answer/answer';
 import { AudioCapture, type CaptureState } from './audio/capture';
 import { encodeWav, FrameBuffer } from './audio/pcm';
 import { SignIn } from './auth/SignIn';
@@ -14,7 +15,6 @@ const FRAMES_PER_SECOND = 1000 / AUDIO_FRAME_MS;
 
 export function App(): React.JSX.Element {
   const [capture, setCapture] = useState<CaptureProtection | null>(null);
-  const [lastAction, setLastAction] = useState<OverlayAction['type'] | null>(null);
   const [audioState, setAudioState] = useState<CaptureState>('idle');
   const [audioError, setAudioError] = useState<string | null>(null);
   const [buffered, setBuffered] = useState(0);
@@ -22,6 +22,7 @@ export function App(): React.JSX.Element {
   const [session, setSession] = useState<Session | null>(null);
   const [connection, setConnection] = useState<ConnectionState>('idle');
   const [lines, setLines] = useState<TranscriptLine[]>([]);
+  const [answer, setAnswer] = useState<AnswerState>(NO_ANSWER);
 
   const frames = useRef(new FrameBuffer(DUMP_SECONDS * FRAMES_PER_SECOND));
   const socket = useRef<SessionSocket | null>(null);
@@ -41,8 +42,22 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void window.vader.getCaptureProtection().then(setCapture);
     return window.vader.onOverlayAction((action) => {
-      if (action.type === 'clear') setLines([]);
-      setLastAction(action.type === 'clear' ? null : action.type);
+      switch (action.type) {
+        case 'clear':
+          setLines([]);
+          setAnswer(NO_ANSWER);
+          break;
+        case 'ask':
+          socket.current?.ask();
+          break;
+        case 'screenshot':
+          void window.vader.captureScreen().then((shot) => {
+            if (shot !== null) socket.current?.askAboutScreen(shot);
+          });
+          break;
+        default:
+          break;
+      }
     });
   }, []);
 
@@ -68,8 +83,11 @@ export function App(): React.JSX.Element {
     if (token !== undefined) {
       socket.current ??= new SessionSocket(serverWsUrl, {
         onMessage: (message) => {
-          if (message.type === 'transcript')
+          if (message.type === 'transcript') {
             setLines((current) => applyTranscript(current, message));
+          } else {
+            setAnswer((current) => applyAnswer(current, message));
+          }
         },
         onState: setConnection,
       });
@@ -132,12 +150,14 @@ export function App(): React.JSX.Element {
       </section>
 
       <section className="pane answer">
-        <h2>Answer</h2>
-        <p className="empty">
-          {lastAction === null
-            ? 'Ctrl+Enter to ask · Ctrl+H to ask about the screen'
-            : `“${lastAction}” received — answers land in Phase 4.`}
-        </p>
+        <h2>Answer{answer.streaming && <span className="cursor"> ▍</span>}</h2>
+        {answer.text === '' ? (
+          <p className="empty">
+            {answer.streaming ? 'Thinking…' : 'Ctrl+Enter to ask · Ctrl+H to ask about the screen'}
+          </p>
+        ) : (
+          <p className="answer-text">{answer.text}</p>
+        )}
       </section>
 
       <footer className="controls">

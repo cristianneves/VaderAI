@@ -164,3 +164,13 @@ button:disabled {
   display: flex;
   gap: 8px;
 }
+
+.answer-text {
+  margin: 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.cursor {
+  color: #86e0b0;
+}
