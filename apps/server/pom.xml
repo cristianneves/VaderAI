@@ -22,6 +22,9 @@
          JAVA_HOME; pinning the release keeps the two from diverging silently. -->
     <java.version>21</java.version>
     <maven.compiler.release>21</maven.compiler.release>
+    <!-- Not managed by the Spring Boot BOM. Phase 4's anthropic-java brings
+         OkHttp too; keeping one version here avoids two on the classpath. -->
+    <okhttp.version>4.12.0</okhttp.version>
   </properties>
 
   <dependencies>
@@ -42,9 +45,47 @@
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
 
+    <!-- Phase 3: Supabase JWT verification, Postgres, Deepgram transport. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-jdbc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <!-- Deepgram speaks WebSocket; OkHttp is the client the plan settled on. -->
+    <dependency>
+      <groupId>com.squareup.okhttp3</groupId>
+      <artifactId>okhttp</artifactId>
+      <version>${okhttp.version}</version>
+    </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- A local stand-in for Deepgram's WebSocket, so the provider is tested
+         against real frames without a key. -->
+    <dependency>
+      <groupId>com.squareup.okhttp3</groupId>
+      <artifactId>mockwebserver</artifactId>
+      <version>${okhttp.version}</version>
       <scope>test</scope>
     </dependency>
   </dependencies>

@@ -116,3 +116,51 @@ button:disabled {
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+.line {
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
+
+.line.interim {
+  color: #a0a0b8;
+}
+
+.speaker {
+  margin-right: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.speaker.ch0 {
+  color: #7fb6ff;
+}
+
+.speaker.ch1 {
+  color: #86e0b0;
+}
+
+.signin {
+  flex: 0;
+}
+
+.signin input {
+  display: block;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 5px 8px;
+  border: 1px solid #3a3a4c;
+  border-radius: 6px;
+  background: #1a1a24;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+}

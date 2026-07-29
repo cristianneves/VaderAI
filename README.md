@@ -2,7 +2,7 @@
 
 A real-time AI copilot for interviews and study sessions. VaderAI runs as an always-on-top desktop overlay on Windows that listens to your call, watches your screen, and streams answers only you can see.
 
-**Status:** Phase 2 of 8. The overlay is capture-invisible and hotkey-driven, and it now captures system audio and the mic as one 16 kHz 2-channel PCM16 stream. Nothing is transcribed or answered yet — the backend pipeline is Phase 3.
+**Status:** Phase 3 of 8. The overlay captures both audio channels and streams them over an authenticated WebSocket to the Spring Boot backend, which relays a speaker-attributed live transcript back. Answers are Phase 4; a Deepgram API key is needed for real transcription.
 
 ---
 
@@ -62,8 +62,25 @@ VaderAI/
 ```
 
 Inside `apps/desktop/src`: `main/` (Electron main — window, hotkeys), `preload/` (the
-single `contextBridge` surface), `renderer/` (React overlay UI), `shared/` (types
-crossing all three).
+single `contextBridge` surface), `renderer/` (React overlay UI, audio capture,
+session socket), `shared/` (types crossing all three).
+
+Inside `apps/server/src/main/java/ai/vader/server`: `config/` (security, WebSocket),
+`session/` (the `/v1/session` handler and per-connection state), `stt/` (provider
+interface + Deepgram), `persistence/` (Spring Data JDBC), `protocol/` (records
+mirroring the zod schemas).
+
+### Security model
+
+The desktop app signs in with Supabase and holds only a user access token; every
+provider secret stays on the server. The WebSocket handshake cannot carry an
+`Authorization` header, so the client sends `hello` with that token as its first
+frame and the server closes `1008` if a valid one does not arrive within 5 s.
+
+The backend connects to Postgres with the service role, which **bypasses RLS**.
+Row-level policies protect the client-direct path only — on the server path,
+every repository call takes the user id from the verified JWT, and
+`UserScopingTest` is what proves it.
 
 ---
 
@@ -91,22 +108,30 @@ startup rather than failing silently.
 - Maven 3.9+ (or just use the committed `mvnw` wrapper)
 - Node 22+ and pnpm 10+ (via `corepack`)
 
-**Accounts needed before Phase 3:**
+**Accounts and keys:**
 
-- Supabase project (auth + Postgres)
-- Deepgram API key
-- Anthropic API key
+- Supabase — or run the whole stack locally with the CLI (below); no account needed
+- Deepgram API key — required for real transcription (Phase 3)
+- Anthropic API key — required for answers (Phase 4)
 
 ```bash
 pnpm install          # TypeScript side
+cp .env.example .env  # fill in; the local-stack defaults already work
+
+pnpm supabase:start   # Postgres + Auth in Docker, prints the keys to put in .env
+pnpm supabase:reset   # (re)apply supabase/migrations
+
 pnpm dev:server       # Spring Boot on :8787
 pnpm dev:desktop      # Electron overlay
 pnpm dev              # both
 
 pnpm typecheck        # tsc across the workspace
-pnpm test             # vitest (desktop)
+pnpm test             # vitest (protocol + desktop)
 pnpm test:server      # mvnw test
 ```
+
+`pnpm supabase:start` runs only Postgres and Auth — the other services are
+excluded because nothing here uses them and their images are large.
 
 The overlay is transparent and frameless, so on first launch look for it in the
 top-left of your primary display — `Ctrl+Shift+↓/→` moves it. The status pill

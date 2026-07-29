@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.9",
     "@vaderai/protocol": "workspace:*"
   },
   "devDependencies": {
