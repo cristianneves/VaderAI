@@ -9,6 +9,34 @@ spring:
     # Deepgram WS, Anthropic SSE — and the Anthropic SDK streams blocking.
     virtual:
       enabled: true
+  datasource:
+    # Supabase owns the schema; its CLI applies the migrations. Flyway and
+    # Liquibase stay off — two migration owners on one database always conflict.
+    url: ${SUPABASE_DB_URL:jdbc:postgresql://127.0.0.1:54322/postgres}
+    username: ${SUPABASE_DB_USER:postgres}
+    password: ${SUPABASE_DB_PASSWORD:postgres}
+  sql:
+    init:
+      mode: never
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Supabase signs access tokens with ES256 and publishes the public key
+          # here, so the backend never holds a shared signing secret.
+          jwk-set-uri: ${SUPABASE_JWKS_URI:http://127.0.0.1:54321/auth/v1/.well-known/jwks.json}
+          # Spring defaults to RS256 only and Supabase signs with ES256, which
+          # fails as "no matching key(s) found" even though the kid matches.
+          # RS256 stays listed because Supabase projects can be issued either.
+          jws-algorithms:
+            - ES256
+            - RS256
+
+vaderai:
+  deepgram:
+    api-key: ${DEEPGRAM_API_KEY:}
+    url: ${DEEPGRAM_URL:wss://api.deepgram.com/v1/listen}
+    reconnect-attempts: 3
 
 management:
   endpoints:

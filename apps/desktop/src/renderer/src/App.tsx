@@ -1,8 +1,13 @@
 import { AUDIO_FRAME_MS } from '@vaderai/protocol';
+import type { Session } from '@supabase/supabase-js';
 import { useEffect, useRef, useState } from 'react';
 import type { CaptureProtection, OverlayAction } from '../../shared/overlay';
 import { AudioCapture, type CaptureState } from './audio/capture';
 import { encodeWav, FrameBuffer } from './audio/pcm';
+import { SignIn } from './auth/SignIn';
+import { serverWsUrl, supabase } from './auth/supabase';
+import { SessionSocket, type ConnectionState } from './net/session';
+import { applyTranscript, speakerOf, type TranscriptLine } from './transcript/log';
 
 const DUMP_SECONDS = 10;
 const FRAMES_PER_SECOND = 1000 / AUDIO_FRAME_MS;
@@ -14,12 +19,17 @@ export function App(): React.JSX.Element {
   const [audioError, setAudioError] = useState<string | null>(null);
   const [buffered, setBuffered] = useState(0);
   const [dumpPath, setDumpPath] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [connection, setConnection] = useState<ConnectionState>('idle');
+  const [lines, setLines] = useState<TranscriptLine[]>([]);
 
   const frames = useRef(new FrameBuffer(DUMP_SECONDS * FRAMES_PER_SECOND));
+  const socket = useRef<SessionSocket | null>(null);
   const audio = useRef<AudioCapture | null>(null);
   audio.current ??= new AudioCapture(
     (frame) => {
       frames.current.push(frame);
+      socket.current?.sendAudio(frame);
       setBuffered(frames.current.size);
     },
     (state, detail) => {
@@ -31,16 +41,62 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void window.vader.getCaptureProtection().then(setCapture);
     return window.vader.onOverlayAction((action) => {
+      if (action.type === 'clear') setLines([]);
       setLastAction(action.type === 'clear' ? null : action.type);
     });
   }, []);
 
-  useEffect(() => () => audio.current?.stop(), []);
+  useEffect(() => {
+    if (supabase === null) return;
+    void supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
+    return () => data.subscription.unsubscribe();
+  }, []);
+
+  useEffect(
+    () => () => {
+      audio.current?.stop();
+      socket.current?.close();
+    },
+    [],
+  );
 
   const listening = audioState === 'starting' || audioState === 'running';
 
+  async function startListening(): Promise<void> {
+    const token = session?.access_token;
+    if (token !== undefined) {
+      socket.current ??= new SessionSocket(serverWsUrl, {
+        onMessage: (message) => {
+          if (message.type === 'transcript')
+            setLines((current) => applyTranscript(current, message));
+        },
+        onState: setConnection,
+      });
+      socket.current.connect(token);
+    }
+    await audio.current?.start();
+  }
+
+  function stopListening(): void {
+    audio.current?.stop();
+    socket.current?.close();
+    setConnection('idle');
+  }
+
   async function dump(): Promise<void> {
     setDumpPath(await window.vader.dumpWav(encodeWav(frames.current.snapshot())));
+  }
+
+  if (session === null) {
+    return (
+      <div className="overlay">
+        <header className="handle">
+          <span className="title">VaderAI</span>
+        </header>
+        <SignIn />
+      </div>
+    );
   }
 
   return (
@@ -61,11 +117,18 @@ export function App(): React.JSX.Element {
 
       <section className="pane transcript">
         <h2>Transcript</h2>
-        <p className="empty">
-          {listening
-            ? 'Capturing audio — transcription lands in Phase 3.'
-            : 'No audio yet — press Start listening.'}
-        </p>
+        {lines.length === 0 ? (
+          <p className="empty">
+            {listening ? 'Listening…' : 'No audio yet — press Start listening.'}
+          </p>
+        ) : (
+          lines.map((line, index) => (
+            <p key={index} className={`line ${line.isFinal ? '' : 'interim'}`}>
+              <span className={`speaker ch${line.channel}`}>{speakerOf(line.channel)}</span>
+              {line.text}
+            </p>
+          ))
+        )}
       </section>
 
       <section className="pane answer">
@@ -78,7 +141,7 @@ export function App(): React.JSX.Element {
       </section>
 
       <footer className="controls">
-        <button onClick={() => (listening ? audio.current?.stop() : void audio.current?.start())}>
+        <button onClick={() => (listening ? stopListening() : void startListening())}>
           {listening ? 'Stop' : 'Start listening'}
         </button>
         <button onClick={() => void dump()} disabled={buffered === 0}>
@@ -87,7 +150,7 @@ export function App(): React.JSX.Element {
         <span className="meta">
           {audioState === 'error'
             ? (audioError ?? 'capture failed')
-            : `${(buffered / FRAMES_PER_SECOND).toFixed(1)}s buffered`}
+            : `${connection} · ${(buffered / FRAMES_PER_SECOND).toFixed(1)}s buffered`}
         </span>
       </footer>
 

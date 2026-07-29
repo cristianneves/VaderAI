@@ -1,6 +1,6 @@
 # 002 — MVP Implementation Phases
 
-**Status:** approved — Phases 0–2 done (see each exit criterion for what is still a manual check), Phase 3 next
+**Status:** approved — Phases 0–3 done (see each exit criterion for what is still a manual check), Phase 4 next
 **Scope:** Windows-only MVP — working app, no billing
 **Backend:** Java 21 + Spring Boot 3.4 (Maven)
 **Total estimate:** ~12–16 days
@@ -167,26 +167,45 @@ the Windows default recording device before assuming the capture is broken.
 
 ### Tasks
 
-- [ ] Supabase schema + migrations: `profiles`, `sessions`, `transcript_turns`, `knowledge_docs`; RLS on every table
-- [ ] Supabase Auth in the desktop app (email/password); persist the access token
-- [ ] `SecurityConfig` — OAuth2 resource server against the Supabase JWKS endpoint
-- [ ] `WebSocketConfig` — register `/v1/session`, raise text and binary buffers to **64 KB**, wrap sessions in `ConcurrentWebSocketSessionDecorator`
-- [ ] `SessionWebSocketHandler extends AbstractWebSocketHandler` — `handleBinaryMessage` for audio, `handleTextMessage` for control JSON
-- [ ] **First-frame auth:** client sends `hello` with the access token as its first message; close `1008` if no valid token within 5 s (the WebSocket API cannot set an `Authorization` header — see 001)
-- [ ] `SttProvider` interface: `start` / `write` / `onTranscript` / `close`
-- [ ] `DeepgramSttProvider` over OkHttp `WebSocket` — **`SessionWebSocketHandler` must never reference Deepgram types directly**
-- [ ] Deepgram params: `model=nova-3&encoding=linear16&sample_rate=16000&channels=2&multichannel=true&interim_results=true&endpointing=700&punctuate=true`
-- [ ] Map `channel_index[0]` → `0 = interviewer`, `1 = user`
-- [ ] Relay interims to the client; buffer finals in a ring buffer for the LLM
-- [ ] Batch-persist finalized turns via Spring Data JDBC — **never per-word**
-- [ ] Scope every query by the JWT `userId` (service role bypasses RLS — see 001)
-- [ ] Reconnect and backpressure handling on both the client socket and the Deepgram socket
+- [x] Supabase schema + migrations: `profiles`, `sessions`, `transcript_turns`, `knowledge_docs`; RLS on every table
+- [x] Supabase Auth in the desktop app (email/password); persist the access token
+- [x] `SecurityConfig` — OAuth2 resource server against the Supabase JWKS endpoint
+- [x] `WebSocketConfig` — register `/v1/session`, raise text and binary buffers to **64 KB**, wrap sessions in `ConcurrentWebSocketSessionDecorator`
+- [x] `SessionWebSocketHandler extends AbstractWebSocketHandler` — `handleBinaryMessage` for audio, `handleTextMessage` for control JSON
+- [x] **First-frame auth:** client sends `hello` with the access token as its first message; close `1008` if no valid token within 5 s (the WebSocket API cannot set an `Authorization` header — see 001)
+- [x] `SttProvider` interface: `start` / `write` / `onTranscript` / `close`
+- [x] `DeepgramSttProvider` over OkHttp `WebSocket` — **`SessionWebSocketHandler` must never reference Deepgram types directly**
+- [x] Deepgram params: `model=nova-3&encoding=linear16&sample_rate=16000&channels=2&multichannel=true&interim_results=true&endpointing=700&punctuate=true`
+- [x] Map `channel_index[0]` → `0 = interviewer`, `1 = user`
+- [x] Relay interims to the client; buffer finals in a ring buffer for the LLM
+- [x] Batch-persist finalized turns via Spring Data JDBC — **never per-word**
+- [x] Scope every query by the JWT `userId` (service role bypasses RLS — see 001)
+- [x] Reconnect and backpressure handling on both the client socket and the Deepgram socket
 
 Three Spring specifics that cost hours if discovered late — buffer size, concurrent sends, and handshake auth — are covered in [001 § Three backend traps](001-implementation-plan.md#three-backend-traps-to-design-around). Read that section before starting this phase.
 
 ### Exit criterion
 
 Speak into the mic while a podcast plays. Both channels appear in the overlay transcript within ~300 ms, correctly attributed to **Interviewer** and **You**, with no crossover. Killing the network and restoring it reconnects without losing the session. A cross-user read test fails as expected.
+
+**Met except for live Deepgram, which needs an API key.** Verified end to end on the
+local Supabase stack: a real sign-up mints an ES256 access token, the `hello`
+frame is validated against the real JWKS, the server answers `ready` with a
+session id, a 6400-byte audio frame is forwarded to the STT socket, and the
+results come back as `transcript` messages attributed to channel 0 and channel 1.
+Postgres afterwards holds the session row closed and **exactly the two finals** —
+the interim was relayed but not stored.
+
+The STT socket in that run was a local stand-in speaking Deepgram's frame format
+(`DEEPGRAM_URL` points the provider at it). Everything up to and including the
+Deepgram wire contract is exercised; what is unproven is Deepgram's own
+transcription quality and latency, which is what the ~300 ms and "no crossover"
+half of this criterion is really about. **Set `DEEPGRAM_API_KEY` and re-run to
+close it.**
+
+Cross-user reads: covered by `UserScopingTest`, which runs against the real
+Supabase Postgres and asserts that asking for another user's session returns
+nothing.
 
 ---
 
