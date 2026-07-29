@@ -8,6 +8,8 @@ import { encodeWav, FrameBuffer } from './audio/pcm';
 import { SignIn } from './auth/SignIn';
 import { serverWsUrl, supabase } from './auth/supabase';
 import { SessionSocket, type ConnectionState } from './net/session';
+import { applyPractice, NO_PRACTICE, type PracticeState } from './practice/practice';
+import { PracticePanel } from './practice/PracticePanel';
 import { Settings } from './settings/Settings';
 import { applyTranscript, speakerOf, type TranscriptLine } from './transcript/log';
 
@@ -25,6 +27,9 @@ export function App(): React.JSX.Element {
   const [lines, setLines] = useState<TranscriptLine[]>([]);
   const [answer, setAnswer] = useState<AnswerState>(NO_ANSWER);
   const [showSettings, setShowSettings] = useState(false);
+  const [showPractice, setShowPractice] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [practice, setPractice] = useState<PracticeState>(NO_PRACTICE);
 
   const frames = useRef(new FrameBuffer(DUMP_SECONDS * FRAMES_PER_SECOND));
   const socket = useRef<SessionSocket | null>(null);
@@ -80,28 +85,47 @@ export function App(): React.JSX.Element {
 
   const listening = audioState === 'starting' || audioState === 'running';
 
-  async function startListening(): Promise<void> {
+  async function startListening(micOnly = false): Promise<void> {
     const token = session?.access_token;
     if (token !== undefined) {
       socket.current ??= new SessionSocket(serverWsUrl, {
         onMessage: (message) => {
-          if (message.type === 'transcript') {
-            setLines((current) => applyTranscript(current, message));
-          } else {
-            setAnswer((current) => applyAnswer(current, message));
+          switch (message.type) {
+            case 'ready':
+              // Practice mode addresses this session over REST, so the id has to
+              // outlive the frame that carried it.
+              setSessionId(message.sessionId);
+              break;
+            case 'transcript':
+              setLines((current) => applyTranscript(current, message));
+              // In practice mode the spoken answer is the channel-1 transcript;
+              // the reducer ignores everything else.
+              setPractice((current) =>
+                applyPractice(current, {
+                  type: 'transcript',
+                  channel: message.channel,
+                  text: message.text,
+                  isFinal: message.isFinal,
+                }),
+              );
+              break;
+            default:
+              setAnswer((current) => applyAnswer(current, message));
+              break;
           }
         },
         onState: setConnection,
       });
       socket.current.connect(token);
     }
-    await audio.current?.start();
+    await audio.current?.start({ micOnly });
   }
 
   function stopListening(): void {
     audio.current?.stop();
     socket.current?.close();
     setConnection('idle');
+    setSessionId(null);
   }
 
   async function dump(): Promise<void> {
@@ -123,8 +147,23 @@ export function App(): React.JSX.Element {
     <div className="overlay">
       <header className="handle">
         <span className="title">VaderAI</span>
-        <button className="link" onClick={() => setShowSettings((open) => !open)}>
+        <button
+          className="link"
+          onClick={() => {
+            setShowSettings((open) => !open);
+            setShowPractice(false);
+          }}
+        >
           {showSettings ? 'Close' : 'Background'}
+        </button>
+        <button
+          className="link"
+          onClick={() => {
+            setShowPractice((open) => !open);
+            setShowSettings(false);
+          }}
+        >
+          {showPractice ? 'Close' : 'Practice'}
         </button>
         <span
           className={`pill ${capture?.supported ? 'ok' : 'warn'}`}
@@ -140,6 +179,14 @@ export function App(): React.JSX.Element {
 
       {showSettings ? (
         <Settings accessToken={session.access_token} onClose={() => setShowSettings(false)} />
+      ) : showPractice ? (
+        <PracticePanel
+          accessToken={session.access_token}
+          sessionId={sessionId}
+          state={practice}
+          onEvent={(event) => setPractice((current) => applyPractice(current, event))}
+          onClose={() => setShowPractice(false)}
+        />
       ) : (
         <>
           <section className="pane transcript">
@@ -174,8 +221,8 @@ export function App(): React.JSX.Element {
       )}
 
       <footer className="controls">
-        <button onClick={() => (listening ? stopListening() : void startListening())}>
-          {listening ? 'Stop' : 'Start listening'}
+        <button onClick={() => (listening ? stopListening() : void startListening(showPractice))}>
+          {listening ? 'Stop' : showPractice ? 'Start (mic only)' : 'Start listening'}
         </button>
         <button onClick={() => void dump()} disabled={buffered === 0}>
           Dump {DUMP_SECONDS}s WAV

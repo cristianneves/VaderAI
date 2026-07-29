@@ -232,3 +232,27 @@ button.link {
   font-size: 11px;
   text-decoration: underline;
 }
+
+.practice .question {
+  margin: 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.practice .scores {
+  margin: 6px 0;
+}
+
+.practice .rewrite {
+  padding: 6px 8px;
+  border-left: 2px solid #3a3a4c;
+  color: #cfcfe0;
+  font-style: italic;
+}
+
+.practice .themes {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+  font-size: 12px;
+}
