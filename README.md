@@ -2,7 +2,7 @@
 
 A real-time AI copilot for interviews and study sessions. VaderAI runs as an always-on-top desktop overlay on Windows that listens to your call, watches your screen, and streams answers only you can see.
 
-**Status:** Phase 3 of 8. The overlay captures both audio channels and streams them over an authenticated WebSocket to the Spring Boot backend, which relays a speaker-attributed live transcript back. Answers are Phase 4; a Deepgram API key is needed for real transcription.
+**Status:** Phase 4 of 8 — the minimum demoable product is complete. The overlay captures both audio channels, streams them to the backend, and renders a speaker-attributed transcript plus a streaming answer that fires on its own when the interviewer stops talking. Provider keys (Deepgram, Anthropic) are needed to run it against the real services.
 
 ---
 
@@ -69,6 +69,21 @@ Inside `apps/server/src/main/java/ai/vader/server`: `config/` (security, WebSock
 `session/` (the `/v1/session` handler and per-connection state), `stt/` (provider
 interface + Deepgram), `persistence/` (Spring Data JDBC), `protocol/` (records
 mirroring the zod schemas).
+
+### How an answer gets triggered
+
+An answer fires on its own when channel 0 (the interviewer) produces a final
+transcript segment and 700 ms of silence follows, with a hard 2 s debounce
+between auto-asks. **Anything on the mic channel cancels it** — if you have
+started answering, you do not need one generated. `Ctrl+Enter` asks regardless,
+and `Ctrl+H` attaches a 1080p grab of the screen. A new trigger cancels an
+answer still streaming.
+
+The prompt is split at its cache boundary: system prompt and knowledge base go
+in a cached prefix with a one-hour TTL, and the transcript goes after it. Note
+that Claude Opus 5 does not cache a prefix under 512 tokens — until the Phase 5
+knowledge base lands, the prefix is too short and `cacheReadInputTokens` stays
+zero.
 
 ### Security model
 

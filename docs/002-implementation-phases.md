@@ -1,6 +1,6 @@
 # 002 — MVP Implementation Phases
 
-**Status:** approved — Phases 0–3 done (see each exit criterion for what is still a manual check), Phase 4 next
+**Status:** approved — Phases 0–4 done (see each exit criterion for what is still a manual check), Phase 5 next
 **Scope:** Windows-only MVP — working app, no billing
 **Backend:** Java 21 + Spring Boot 3.4 (Maven)
 **Total estimate:** ~12–16 days
@@ -216,24 +216,44 @@ nothing.
 
 ### Tasks
 
-- [ ] `TurnDetector` — auto-ask when channel 0 emits a final segment **and** 700 ms of silence follows
-- [ ] Hard debounce: no auto-ask within 2 s of the previous one
-- [ ] Manual trigger on `Ctrl+Enter` using whatever is buffered
-- [ ] `PromptAssembler` — system prompt + knowledge base into a cached prefix; volatile turn context **after** the breakpoint
-- [ ] `AnswerEngine` interface + `AnthropicAnswerEngine` using `client.messages().createStreaming(...)`
-- [ ] `OutputConfig.Effort.LOW` as the latency lever; leave thinking on (default on Opus 5)
-- [ ] `CacheControlEphemeral` with `Ttl.TTL_1H` on the knowledge-base block
-- [ ] Fast mode behind a config flag, **off by default** — beta path: `client.beta().messages()` + `AnthropicBeta.FAST_MODE_2026_02_01` + `Speed.FAST`
-- [ ] Stream `text_delta` events to the client as `answer_delta` messages; render token-by-token
-- [ ] Screenshot path on `Ctrl+H`: `desktopCapturer` → PNG → **downsample to 1080p** → base64 → image block placed _before_ the text block
-- [ ] Cancel-in-flight: a new trigger closes the previous `StreamResponse`
-- [ ] Log `usage` per answer: input, output, `cacheReadInputTokens`
+- [x] `TurnDetector` — auto-ask when channel 0 emits a final segment **and** 700 ms of silence follows
+- [x] Hard debounce: no auto-ask within 2 s of the previous one
+- [x] Manual trigger on `Ctrl+Enter` using whatever is buffered
+- [x] `PromptAssembler` — system prompt + knowledge base into a cached prefix; volatile turn context **after** the breakpoint
+- [x] `AnswerEngine` interface + `AnthropicAnswerEngine` using `client.messages().createStreaming(...)`
+- [x] `OutputConfig.Effort.LOW` as the latency lever; leave thinking on (default on Opus 5)
+- [x] `CacheControlEphemeral` with `Ttl.TTL_1H` on the knowledge-base block
+- [x] Fast mode behind a config flag, **off by default** — beta path: `client.beta().messages()` + `AnthropicBeta.FAST_MODE_2026_02_01` + `Speed.FAST`
+- [x] Stream `text_delta` events to the client as `answer_delta` messages; render token-by-token
+- [x] Screenshot path on `Ctrl+H`: `desktopCapturer` → PNG → **downsample to 1080p** → base64 → image block placed _before_ the text block
+- [x] Cancel-in-flight: a new trigger closes the previous `StreamResponse`
+- [x] Log `usage` per answer: input, output, `cacheReadInputTokens`
 
 **Verify SDK builder names against the [anthropic-java](https://github.com/anthropics/anthropic-sdk-java) repo before writing this code** — especially the image content block, which is not documented in the plan. Do not infer Java bindings from the REST shape.
 
 ### Exit criterion
 
 Play a recorded interview question through speakers. First token renders in **under 1.6 s** from the end of the question, and the answer is on-topic. Screenshot a LeetCode problem, press `Ctrl+H`, get a correct approach with complexity analysis. Logs show non-zero `cacheReadInputTokens` from the second answer onward.
+
+**Loop verified; latency and answer quality need a real key.** End to end against a
+local stand-in for the Messages API: a `hello` on a real Supabase JWT, an
+interviewer question on channel 0, `answer_start` fired **739 ms** after the
+question's final segment (the 700 ms silence window, on the nose), three
+`answer_delta` messages, `answer_end`, and usage logged. The request carried
+`model=claude-opus-5`, `effort=low`, and a `cache_control` of
+`{"type":"ephemeral","ttl":"1h"}` on the last system block, with the transcript
+**outside** the cached prefix. The `Ctrl+H` path arrives upstream as
+`image -> text`, base64, `image/png`.
+
+Not covered: real first-token latency and whether the answers are any good.
+Both need `ANTHROPIC_API_KEY`.
+
+> ⚠️ **The cache half of this criterion cannot pass yet, and it is not a bug.**
+> Claude Opus 5 will not cache a prefix below **512 tokens**, and the system
+> prompt alone is ~306. With the knowledge base still empty, `cacheReadInputTokens`
+> stays 0 no matter how many answers you run — the breakpoint is sent and simply
+> ignored. Phase 5 pushes the prefix over the minimum (a résumé alone clears it),
+> and that is the point to re-check this line.
 
 ---
 

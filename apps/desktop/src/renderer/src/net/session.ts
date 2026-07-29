@@ -1,4 +1,9 @@
-import { PROTOCOL_VERSION, serverMessageSchema, type ServerMessage } from '@vaderai/protocol';
+import {
+  PROTOCOL_VERSION,
+  serverMessageSchema,
+  type ClientMessage,
+  type ServerMessage,
+} from '@vaderai/protocol';
 
 export type ConnectionState = 'idle' | 'connecting' | 'ready' | 'reconnecting' | 'error';
 
@@ -105,6 +110,20 @@ export class SessionSocket {
   sendAudio(frame: Int16Array): void {
     if (!this.ready || this.socket === null) return;
     this.socket.send(frame.buffer as ArrayBuffer);
+  }
+
+  /** Asks for an answer from whatever transcript the server already has. */
+  ask(): void {
+    this.sendJson({ type: 'ask', trigger: 'manual' });
+  }
+
+  askAboutScreen(shot: { mimeType: 'image/png'; dataBase64: string }): void {
+    this.sendJson({ type: 'screenshot', ...shot });
+  }
+
+  private sendJson(message: ClientMessage): void {
+    if (!this.ready || this.socket === null) return;
+    this.socket.send(JSON.stringify(message));
   }
 
   close(): void {

@@ -37,6 +37,14 @@ vaderai:
     api-key: ${DEEPGRAM_API_KEY:}
     url: ${DEEPGRAM_URL:wss://api.deepgram.com/v1/listen}
     reconnect-attempts: 3
+  anthropic:
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: ${ANTHROPIC_MODEL:claude-opus-5}
+    max-tokens: 1024
+    # Research preview: same model, faster output, premium pricing, Claude API
+    # only. Off by default — it also takes a different (beta) request path.
+    fast-mode: ${ANTHROPIC_FAST_MODE:false}
+    base-url: ${ANTHROPIC_BASE_URL:}
 
 management:
   endpoints:
