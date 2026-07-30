@@ -1,0 +1,45 @@
+appId: ai.vader.desktop
+productName: VaderAI
+copyright: Copyright © 2026 VaderAI
+
+directories:
+  # `build/` is where electron-builder looks for icon.ico by convention.
+  buildResources: build
+  output: release
+
+# Everything the app runs is already bundled: Vite bundles the renderer, and
+# main/preload are bundled with @vaderai/protocol inlined (see
+# electron.vite.config.ts). So nothing has to resolve from node_modules at
+# runtime, and excluding it keeps pnpm's symlinked store out of the asar —
+# electron-builder follows those links badly and silently ships a broken app.
+files:
+  - out/**
+  - '!node_modules/**'
+
+# No native modules, so there is nothing to rebuild against Electron's ABI.
+npmRebuild: false
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  # Unsigned. SmartScreen will warn on first run — see docs/003-deployment.md.
+  signAndEditExecutable: true
+
+nsis:
+  # Not one-click: the overlay needs a visible install path for the user to find
+  # the uninstaller, and a silent install of a screen-capture-adjacent tool is a
+  # bad look.
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: VaderAI
+  artifactName: ${productName}-${version}-setup.${ext}
+
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}

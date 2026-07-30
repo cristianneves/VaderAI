@@ -13,7 +13,9 @@
 
   <groupId>ai.vader</groupId>
   <artifactId>vaderai-server</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
+  <!-- Kept in step with the desktop app and the root package.json: 0.MINOR.x
+       where MINOR is the last completed phase. 1.0.0 is the first release. -->
+  <version>0.8.0</version>
   <name>vaderai-server</name>
   <description>VaderAI backend — session WebSocket, transcription relay, answer engine</description>
 
