@@ -1,6 +1,6 @@
 # 002 — MVP Implementation Phases
 
-**Status:** approved — Phases 0–6 done (see each exit criterion for what is still a manual check), Phase 7 next
+**Status:** approved — Phases 0–7 done (see each exit criterion for what is still a manual check), Phase 8 next
 **Scope:** Windows-only MVP — working app, no billing
 **Backend:** Java 21 + Spring Boot 3.4 (Maven)
 **Total estimate:** ~12–16 days
@@ -379,15 +379,74 @@ Not covered, and worth being plain about:
 
 ### Tasks
 
-- [ ] REST endpoints: list sessions, fetch one with turns, delete
-- [ ] Session list with date, duration, question count
-- [ ] Review screen: full transcript paired with the answers given
-- [ ] Export a session to Markdown
-- [ ] Delete cascades to turns
+- [x] REST endpoints: list sessions, fetch one with turns, delete
+- [x] Session list with date, duration, question count
+- [x] Review screen: full transcript paired with the answers given
+- [x] Export a session to Markdown
+- [x] Delete cascades to turns
+
+**The estimate was wrong about where the work was.** Three of these five were
+straightforward; the phase was really about a gap the plan had not noticed.
+
+**Answers were never persisted.** Through Phase 6, `LiveSession.ask` forwarded
+each delta to the socket and dropped it — no buffer, and `onComplete` only logged
+token counts, so an answer existed on screen and nowhere else. "Review the full
+transcript **and answers**" was therefore unreachable without a new write path,
+which is the bulk of what this phase actually did. Three notes on how:
+
+- **Answers could not go in `transcript_turns`.** Its `channel` column mirrors
+  Deepgram's channel index and is constrained to `(0, 1)` — interviewer and mic.
+  Widening it to fit an assistant turn would blur the speaker attribution the
+  whole pipeline rests on, so answers got their own table.
+- **Only completed answers are stored.** Cancelling is deliberate — a new
+  question makes the previous one stale — so a half sentence that was replaced on
+  purpose does not reach the history, and a failed answer was never given.
+- **The accumulator appends before sending.** A send that fails on a slow client
+  shortens what the user saw, not what was stored.
+
+**"Delete cascades to turns" needed no code at all** — the `on delete cascade`
+clauses have been there since Phase 3. What it needed was a test asserting them
+against the database rather than through the repositories, which would pass even
+if the service were deleting rows by hand.
 
 ### Exit criterion
 
 Close a session, reopen the app, and review the full transcript and answers.
+
+**Met.** End to end against the local stack, with a real Supabase sign-up and the
+real session socket: two transcript turns and two answers (one `Ctrl+Enter`, one
+`Ctrl+H`) went in, the socket closed, and Postgres held both answers with their
+triggers. `GET /v1/sessions` then reported the session as `live` with
+`turns=2 / answers=2 / practiceQuestions=0` and a non-null `endedAt`;
+`GET /v1/sessions/{id}` returned the turns and answers, which interleave by
+timestamp into `Interviewer → You → Answer (manual) → Answer (screenshot)`;
+`DELETE` returned `204` and left zero sessions, turns, and answers.
+
+Negatives all held: `401` with no token, `404` for an unknown id, `404` on a
+second delete, and a second user got `[]` from the list plus `404` on both detail
+and delete — with their delete leaving all rows intact.
+
+Two things are worth recording because they are not obvious from the code:
+
+- **`/v1/sessions` is one character from a public route.** `/v1/session`
+  (singular) is `permitAll` because the WebSocket authenticates itself with its
+  first frame. Spring matches that on the exact path, so the plural routes are
+  protected — but `VaderAiApplicationTests` now pins it rather than leaving it to
+  inference.
+- **A practice session is reviewed through `GET /v1/practice/{id}`, not the
+  transcript.** Its spoken answers live on the question rows, and that route
+  costs no model call — where the `/report` route would re-bill the themes on
+  every view.
+
+**Not covered: the save dialog.** `dialog.showSaveDialog` cannot be exercised in
+the node test environment, so `main/export.ts` has no test — the same gap
+`screenshot.ts` and `display-media.ts` already have. What *is* verified: the call
+shape typechecks against Electron's own definitions, and the app builds and
+launches with the handler registered. What is **not**: that the dialog behaves at
+runtime. It is deliberately unparented — the overlay is `focusable: false`, and a
+dialog modal to a window that cannot take focus is how you get one stuck behind
+an always-on-top window — but whether that holds on Windows needs a human at the
+keyboard. **Open the History panel, pick a session, and press Export Markdown.**
 
 ---
 
