@@ -148,3 +148,43 @@ describe('toMarkdown for a practice session', () => {
     expect(out).toContain('_No questions were generated._');
   });
 });
+
+describe('toMarkdown — recap', () => {
+  const recap = {
+    summary: 'You walked through the payments rewrite.',
+    keyPoints: ['They run Postgres on RDS', 'Hiring for staff level'],
+    actionItems: ['Send the architecture doc'],
+  };
+
+  it('puts the recap above the transcript', () => {
+    const out = toMarkdown(summary(), detail(), [], recap);
+
+    expect(out.indexOf('## Recap')).toBeGreaterThan(-1);
+    expect(out.indexOf('## Recap')).toBeLessThan(out.indexOf('## Transcript'));
+    expect(out).toContain('You walked through the payments rewrite.');
+  });
+
+  it('renders key points as bullets and action items as checkboxes', () => {
+    const out = toMarkdown(summary(), detail(), [], recap);
+
+    expect(out).toContain('- They run Postgres on RDS');
+    expect(out).toContain('- [ ] Send the architecture doc');
+  });
+
+  it('omits a heading rather than printing an empty list', () => {
+    const out = toMarkdown(summary(), detail(), [], { ...recap, actionItems: [] });
+
+    expect(out).toContain('### Key points');
+    expect(out).not.toContain('### Action items');
+  });
+
+  it('leaves the document unchanged when there is no recap', () => {
+    expect(toMarkdown(summary(), detail(), [], null)).toBe(toMarkdown(summary(), detail()));
+  });
+
+  it('carries the recap onto a practice export too', () => {
+    const out = toMarkdown(summary({ kind: 'practice' }), detail({ kind: 'practice' }), [], recap);
+
+    expect(out).toContain('## Recap');
+  });
+});

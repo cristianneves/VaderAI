@@ -433,3 +433,32 @@ button.link {
   margin-left: 8px;
   vertical-align: middle;
 }
+
+/* --- session recap (Phase 9d) --------------------------------------------- */
+
+.recap {
+  margin-bottom: 8px;
+  padding: 7px 8px;
+  border: 1px solid #3a3a4c;
+  border-radius: 6px;
+  background: #1a1a24;
+}
+
+.recap h3 {
+  margin: 8px 0 3px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #9a9ab0;
+}
+
+.recap ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.recap li {
+  margin-bottom: 2px;
+  font-size: 12px;
+}

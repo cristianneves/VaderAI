@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { deleteSession, fetchSession, fetchSessions } from './api';
+import { deleteSession, fetchSession, fetchSessions, fetchSummary } from './api';
 
 const SESSION = '6f1c9a2e-7b3d-4c8e-9f10-2a5b6c7d8e90';
 
@@ -63,5 +63,31 @@ describe('history api', () => {
     fetchMock.mockResolvedValue(failed(404, 'no session'));
 
     await expect(fetchSession('tok', SESSION)).rejects.toThrow('404 no session');
+  });
+});
+
+describe('session recap', () => {
+  it('fetches the recap for one session', async () => {
+    fetchMock.mockResolvedValue(
+      ok({ summary: 'You discussed payments.', keyPoints: ['RDS'], actionItems: [] }),
+    );
+
+    const recap = await fetchSummary('tok', SESSION);
+
+    expect(lastCall()[0]).toContain(`/v1/sessions/${SESSION}/summary`);
+    expect(recap.summary).toBe('You discussed payments.');
+    expect(recap.keyPoints).toEqual(['RDS']);
+  });
+
+  it('surfaces a session with nothing to summarise', async () => {
+    fetchMock.mockResolvedValue(failed(409, 'Nothing was said in this session'));
+
+    await expect(fetchSummary('tok', SESSION)).rejects.toThrow('Nothing was said');
+  });
+
+  it('surfaces another user\u2019s session as not found', async () => {
+    fetchMock.mockResolvedValue(failed(404, 'no session'));
+
+    await expect(fetchSummary('tok', SESSION)).rejects.toThrow('404');
   });
 });

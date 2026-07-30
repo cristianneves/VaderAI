@@ -33,6 +33,13 @@ export interface SessionDetail {
   answers: SessionAnswer[];
 }
 
+/** The post-call recap. Generated once server-side, then read. */
+export interface SessionRecap {
+  summary: string;
+  keyPoints: string[];
+  actionItems: string[];
+}
+
 export type EntryKind = 'interviewer' | 'you' | 'answer';
 
 export interface TimelineEntry {
