@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import { release } from 'node:os';
 import { join } from 'node:path';
 import { registerDisplayMediaHandler } from './display-media';
+import { registerExportHandler } from './export';
 import { registerHotkeys } from './hotkeys';
 import { createOverlayWindow, moveOverlay, toggleOverlay } from './overlay-window';
 import { captureScreen } from './screenshot';
@@ -29,6 +30,7 @@ void app.whenReady().then(() => {
   if (!capture.supported) console.warn(`[overlay] ${capture.warning}`);
 
   registerDisplayMediaHandler();
+  registerExportHandler();
 
   const window = createOverlayWindow();
   ipcMain.handle('overlay:capture-protection', () => capture);

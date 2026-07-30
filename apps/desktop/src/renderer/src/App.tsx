@@ -7,6 +7,7 @@ import { AudioCapture, type CaptureState } from './audio/capture';
 import { encodeWav, FrameBuffer } from './audio/pcm';
 import { SignIn } from './auth/SignIn';
 import { serverWsUrl, supabase } from './auth/supabase';
+import { HistoryPanel } from './history/HistoryPanel';
 import { SessionSocket, type ConnectionState } from './net/session';
 import { applyPractice, NO_PRACTICE, type PracticeState } from './practice/practice';
 import { PracticePanel } from './practice/PracticePanel';
@@ -15,6 +16,12 @@ import { applyTranscript, speakerOf, type TranscriptLine } from './transcript/lo
 
 const DUMP_SECONDS = 10;
 const FRAMES_PER_SECOND = 1000 / AUDIO_FRAME_MS;
+
+/**
+ * Which panel is showing. One value rather than a boolean each: with four panels
+ * every toggle would otherwise have to remember to close the other three.
+ */
+type View = 'live' | 'settings' | 'practice' | 'history';
 
 export function App(): React.JSX.Element {
   const [capture, setCapture] = useState<CaptureProtection | null>(null);
@@ -26,10 +33,12 @@ export function App(): React.JSX.Element {
   const [connection, setConnection] = useState<ConnectionState>('idle');
   const [lines, setLines] = useState<TranscriptLine[]>([]);
   const [answer, setAnswer] = useState<AnswerState>(NO_ANSWER);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showPractice, setShowPractice] = useState(false);
+  const [view, setView] = useState<View>('live');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [practice, setPractice] = useState<PracticeState>(NO_PRACTICE);
+
+  /** Clicking the open panel's button returns to the live view. */
+  const toggle = (panel: View): void => setView((current) => (current === panel ? 'live' : panel));
 
   const frames = useRef(new FrameBuffer(DUMP_SECONDS * FRAMES_PER_SECOND));
   const socket = useRef<SessionSocket | null>(null);
@@ -147,23 +156,14 @@ export function App(): React.JSX.Element {
     <div className="overlay">
       <header className="handle">
         <span className="title">VaderAI</span>
-        <button
-          className="link"
-          onClick={() => {
-            setShowSettings((open) => !open);
-            setShowPractice(false);
-          }}
-        >
-          {showSettings ? 'Close' : 'Background'}
+        <button className="link" onClick={() => toggle('settings')}>
+          {view === 'settings' ? 'Close' : 'Background'}
         </button>
-        <button
-          className="link"
-          onClick={() => {
-            setShowPractice((open) => !open);
-            setShowSettings(false);
-          }}
-        >
-          {showPractice ? 'Close' : 'Practice'}
+        <button className="link" onClick={() => toggle('practice')}>
+          {view === 'practice' ? 'Close' : 'Practice'}
+        </button>
+        <button className="link" onClick={() => toggle('history')}>
+          {view === 'history' ? 'Close' : 'History'}
         </button>
         <span
           className={`pill ${capture?.supported ? 'ok' : 'warn'}`}
@@ -177,16 +177,18 @@ export function App(): React.JSX.Element {
         </span>
       </header>
 
-      {showSettings ? (
-        <Settings accessToken={session.access_token} onClose={() => setShowSettings(false)} />
-      ) : showPractice ? (
+      {view === 'settings' ? (
+        <Settings accessToken={session.access_token} onClose={() => setView('live')} />
+      ) : view === 'practice' ? (
         <PracticePanel
           accessToken={session.access_token}
           sessionId={sessionId}
           state={practice}
           onEvent={(event) => setPractice((current) => applyPractice(current, event))}
-          onClose={() => setShowPractice(false)}
+          onClose={() => setView('live')}
         />
+      ) : view === 'history' ? (
+        <HistoryPanel accessToken={session.access_token} onClose={() => setView('live')} />
       ) : (
         <>
           <section className="pane transcript">
@@ -221,8 +223,10 @@ export function App(): React.JSX.Element {
       )}
 
       <footer className="controls">
-        <button onClick={() => (listening ? stopListening() : void startListening(showPractice))}>
-          {listening ? 'Stop' : showPractice ? 'Start (mic only)' : 'Start listening'}
+        <button
+          onClick={() => (listening ? stopListening() : void startListening(view === 'practice'))}
+        >
+          {listening ? 'Stop' : view === 'practice' ? 'Start (mic only)' : 'Start listening'}
         </button>
         <button onClick={() => void dump()} disabled={buffered === 0}>
           Dump {DUMP_SECONDS}s WAV

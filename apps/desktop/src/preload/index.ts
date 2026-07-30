@@ -13,6 +13,9 @@ const api = {
   captureScreen: (): Promise<ScreenshotCapture | null> => ipcRenderer.invoke('overlay:screenshot'),
   /** Writes a finished WAV to disk and resolves with its path. Debug only. */
   dumpWav: (bytes: Uint8Array): Promise<string> => ipcRenderer.invoke('audio:dump-wav', bytes),
+  /** Save-dialog export. Resolves with the chosen path, or null if cancelled. */
+  exportMarkdown: (name: string, markdown: string): Promise<string | null> =>
+    ipcRenderer.invoke('session:export-markdown', name, markdown),
   /** Subscribes to hotkey actions main forwards. Returns an unsubscribe fn. */
   onOverlayAction: (handler: (action: OverlayAction) => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, action: OverlayAction): void => handler(action);

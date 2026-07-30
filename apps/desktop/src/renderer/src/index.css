@@ -256,3 +256,37 @@ button.link {
   padding-left: 18px;
   font-size: 12px;
 }
+
+.session-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 6px 8px;
+  border: 1px solid #3a3a4c;
+  border-radius: 6px;
+  background: #1a1a24;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.session-row:hover {
+  border-color: #55556b;
+}
+
+.session-date {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.history .speaker.answer {
+  color: #8ad6a8;
+}
+
+.history .entry-answer {
+  margin-left: 8px;
+}
