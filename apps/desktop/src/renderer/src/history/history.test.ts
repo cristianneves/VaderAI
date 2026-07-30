@@ -38,7 +38,11 @@ describe('timelineOf', () => {
           { channel: 1, content: 'Sure, at Acme...', createdAt: '2026-07-29T10:00:09Z' },
         ],
         answers: [
-          { content: 'At Acme I cut deploy time.', trigger: 'auto', createdAt: '2026-07-29T10:00:04Z' },
+          {
+            content: 'At Acme I cut deploy time.',
+            trigger: 'auto',
+            createdAt: '2026-07-29T10:00:04Z',
+          },
         ],
       }),
     );
@@ -64,7 +68,9 @@ describe('timelineOf', () => {
   it('keeps the trigger so a screenshot answer can be labelled', () => {
     const state = timelineOf(
       detail({
-        answers: [{ content: 'O(n log n)', trigger: 'screenshot', createdAt: '2026-07-29T10:00:00Z' }],
+        answers: [
+          { content: 'O(n log n)', trigger: 'screenshot', createdAt: '2026-07-29T10:00:00Z' },
+        ],
       }),
     );
 

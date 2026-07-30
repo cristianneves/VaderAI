@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain } from 'electron';
 import { writeFile } from 'node:fs/promises';
 import { release } from 'node:os';
 import { join } from 'node:path';
@@ -6,9 +6,13 @@ import { registerDisplayMediaHandler } from './display-media';
 import { registerExportHandler } from './export';
 import { registerHotkeys } from './hotkeys';
 import { createOverlayWindow, moveOverlay, toggleOverlay } from './overlay-window';
+import { startReporting } from './reporter';
 import { captureScreen } from './screenshot';
-import { checkCaptureProtection } from './windows-support';
+import { captureProtectionNotice, checkCaptureProtection } from './windows-support';
 import type { OverlayAction } from '../shared/overlay';
+
+// Before anything else, so a failure during startup is still recorded.
+const errorLog = startReporting();
 
 function handleAction(window: BrowserWindow, action: OverlayAction): void {
   switch (action.type) {
@@ -27,13 +31,24 @@ function handleAction(window: BrowserWindow, action: OverlayAction): void {
 
 void app.whenReady().then(() => {
   const capture = checkCaptureProtection(process.platform, release());
-  if (!capture.supported) console.warn(`[overlay] ${capture.warning}`);
+  if (!capture.supported) {
+    console.warn(`[overlay] ${capture.warning}`);
+    errorLog.append('startup:capture-protection', capture.warning);
+  }
 
   registerDisplayMediaHandler();
   registerExportHandler();
 
   const window = createOverlayWindow();
   ipcMain.handle('overlay:capture-protection', () => capture);
+
+  // The header pill carries this too, but a pill on a transparent overlay is
+  // easy to miss right up until the moment it matters. Unparented for the same
+  // reason the export dialog is — the overlay cannot take focus.
+  const notice = captureProtectionNotice(capture);
+  if (notice !== null) {
+    void dialog.showMessageBox({ type: 'warning', buttons: ['Got it'], ...notice });
+  }
 
   ipcMain.handle('overlay:screenshot', () => captureScreen());
 

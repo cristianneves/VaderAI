@@ -23,7 +23,18 @@ export const supabase: SupabaseClient | null =
 export const serverWsUrl =
   (import.meta.env['VITE_SERVER_WS_URL'] as string | undefined) ?? 'ws://localhost:8787/v1/session';
 
+/**
+ * The REST origin for the same backend as a socket URL.
+ *
+ * `ws:` → `http:` and `wss:` → `https:` both fall out of replacing the leading
+ * "ws", which matters in production: the deployed backend is reached over TLS,
+ * and a build that silently talked plain HTTP to it would send bearer tokens in
+ * the clear.
+ */
+export function httpUrlFromWs(wsUrl: string): string {
+  return wsUrl.replace(/^ws/, 'http').replace(/\/v1\/session$/, '');
+}
+
 /** Same backend, REST side. Derived from the socket URL unless set explicitly. */
 export const serverHttpUrl =
-  (import.meta.env['VITE_SERVER_HTTP_URL'] as string | undefined) ??
-  serverWsUrl.replace(/^ws/, 'http').replace(/\/v1\/session$/, '');
+  (import.meta.env['VITE_SERVER_HTTP_URL'] as string | undefined) ?? httpUrlFromWs(serverWsUrl);

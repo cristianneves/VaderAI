@@ -35,3 +35,29 @@ export function checkCaptureProtection(platform: string, release: string): Captu
 
   return { supported: true };
 }
+
+/** A startup dialog's contents. Shape matches Electron's `showMessageBox`. */
+export interface CaptureNotice {
+  title: string;
+  message: string;
+  detail: string;
+}
+
+/**
+ * What to tell the user at startup when the overlay cannot be hidden, or null
+ * when there is nothing to say.
+ *
+ * The pill in the header already carries the warning, but a pill on a
+ * transparent overlay is exactly the thing someone misses right up until they
+ * share their screen in a real interview. The point of this one is that it says
+ * what to *do*, not just what is wrong.
+ */
+export function captureProtectionNotice(capture: CaptureProtection): CaptureNotice | null {
+  if (capture.supported) return null;
+
+  return {
+    title: 'VaderAI cannot hide itself on this machine',
+    message: 'The overlay will be visible to anyone you share your screen with.',
+    detail: `${capture.warning}\n\nUntil this is resolved, share a single window rather than your entire screen — a window share never contains the overlay. Updating to Windows 10 version 2004 (build ${MIN_WINDOWS_BUILD}) or newer restores the guarantee.`,
+  };
+}
