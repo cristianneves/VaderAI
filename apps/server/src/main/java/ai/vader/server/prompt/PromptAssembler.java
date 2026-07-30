@@ -1,6 +1,7 @@
 package ai.vader.server.prompt;
 
 import ai.vader.server.llm.AnswerRequest;
+import ai.vader.server.preferences.Language;
 import ai.vader.server.stt.TranscriptEvent;
 import java.util.ArrayList;
 import java.util.List;
@@ -48,6 +49,22 @@ public class PromptAssembler {
             """;
 
     /**
+     * How the answer language is stated. Part of the cached prefix, which is
+     * correct: it is constant for a session, so it costs one cold write and then
+     * caches — and two users in different languages get different prefixes,
+     * which is what they should get.
+     *
+     * <p>{@link Language#MULTI} is deliberately not given a language to write
+     * in. It means the speaker switches between several, so the only right
+     * instruction is to follow them.
+     */
+    static String languageInstruction(Language language) {
+        return language == Language.MULTI
+                ? "\n\nAnswer in whichever language the interviewer just used."
+                : "\n\nAnswer in " + language.englishName() + ".";
+    }
+
+    /**
      * @param recentTurns conversation tail, oldest first
      * @param knowledgeBase the user's résumé and notes; empty until Phase 5 fills it
      * @param question what the user typed in the ask bar, or null to answer the
@@ -59,9 +76,10 @@ public class PromptAssembler {
             String knowledgeBase,
             Optional<AnswerRequest.ImageInput> image,
             String question,
-            List<AnswerRequest.Exchange> priorExchanges) {
+            List<AnswerRequest.Exchange> priorExchanges,
+            Language language) {
         List<String> cached = new ArrayList<>();
-        cached.add(SYSTEM_PROMPT);
+        cached.add(SYSTEM_PROMPT + languageInstruction(language));
         if (knowledgeBase != null && !knowledgeBase.isBlank()) {
             cached.add("Background on the person you are helping:\n\n" + knowledgeBase.strip());
         }

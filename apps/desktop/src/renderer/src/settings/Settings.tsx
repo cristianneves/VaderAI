@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { deleteKnowledge, fetchKnowledge, saveKnowledge, uploadKnowledgeFile } from './api';
+import {
+  deleteKnowledge,
+  fetchKnowledge,
+  fetchPreferences,
+  saveKnowledge,
+  saveLanguage,
+  uploadKnowledgeFile,
+  type PreferencesView,
+} from './api';
 import {
   contentOf,
   EMPTY_VIEW,
@@ -20,6 +28,7 @@ export function Settings({ accessToken, onClose }: Props): React.JSX.Element {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preferences, setPreferences] = useState<PreferencesView | null>(null);
   const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
 
   async function reload(): Promise<void> {
@@ -32,6 +41,14 @@ export function Settings({ accessToken, onClose }: Props): React.JSX.Element {
       setError(failed instanceof Error ? failed.message : String(failed));
     }
   }
+
+  useEffect(() => {
+    // Left null on failure so the dropdown stays hidden rather than claiming
+    // the language is English when we simply could not read it.
+    void fetchPreferences(accessToken)
+      .then(setPreferences)
+      .catch(() => undefined);
+  }, [accessToken]);
 
   useEffect(() => {
     void reload();
@@ -68,6 +85,30 @@ export function Settings({ accessToken, onClose }: Props): React.JSX.Element {
           Over {view.ceiling.toLocaleString()} tokens. Trim it — past this point the prefix costs
           more than it adds.
         </p>
+      )}
+
+      {preferences !== null && (
+        <div className="knowledge-slot">
+          <label htmlFor="session-language">
+            Language <span className="meta">What is spoken, and what answers come back in.</span>
+          </label>
+          <select
+            id="session-language"
+            value={preferences.language}
+            disabled={busy}
+            onChange={(event) => {
+              const language = event.target.value;
+              setPreferences({ ...preferences, language });
+              void run(() => saveLanguage(accessToken, language));
+            }}
+          >
+            {preferences.languages.map((option) => (
+              <option key={option.code} value={option.code}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
 
       {KNOWLEDGE_KINDS.map(({ kind, label, hint }) => (

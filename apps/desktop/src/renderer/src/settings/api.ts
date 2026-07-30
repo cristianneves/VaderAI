@@ -40,3 +40,32 @@ export async function uploadKnowledgeFile(
 export async function deleteKnowledge(token: string, kind: KnowledgeKind): Promise<void> {
   await call(token, `/${kind}`, { method: 'DELETE' });
 }
+
+/**
+ * The language list comes from the server rather than being duplicated here —
+ * it has to match what the speech model accepts, and two copies would drift.
+ */
+export interface PreferencesView {
+  language: string;
+  languages: { code: string; label: string }[];
+}
+
+async function preferences(token: string, init: RequestInit = {}): Promise<Response> {
+  const response = await fetch(`${serverHttpUrl}/v1/preferences`, {
+    ...init,
+    headers: { ...init.headers, Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+  return response;
+}
+
+export const fetchPreferences = async (token: string): Promise<PreferencesView> =>
+  (await preferences(token)).json() as Promise<PreferencesView>;
+
+export async function saveLanguage(token: string, language: string): Promise<void> {
+  await preferences(token, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ language }),
+  });
+}

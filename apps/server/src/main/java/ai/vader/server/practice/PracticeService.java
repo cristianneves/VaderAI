@@ -3,6 +3,7 @@ package ai.vader.server.practice;
 import ai.vader.server.knowledge.KnowledgeKind;
 import ai.vader.server.knowledge.KnowledgeService;
 import ai.vader.server.llm.JsonEngine;
+import ai.vader.server.preferences.PreferencesService;
 import ai.vader.server.session.TranscriptService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
@@ -34,6 +35,7 @@ public class PracticeService {
     private final PracticeQuestionRepository questions;
     private final TranscriptService transcripts;
     private final KnowledgeService knowledge;
+    private final PreferencesService preferences;
     private final JsonEngine llm;
     private final ObjectMapper json;
 
@@ -41,11 +43,13 @@ public class PracticeService {
             PracticeQuestionRepository questions,
             TranscriptService transcripts,
             KnowledgeService knowledge,
+            PreferencesService preferences,
             JsonEngine llm,
             ObjectMapper json) {
         this.questions = questions;
         this.transcripts = transcripts;
         this.knowledge = knowledge;
+        this.preferences = preferences;
         this.llm = llm;
         this.json = json;
     }
@@ -153,7 +157,7 @@ public class PracticeService {
         // Read once per call rather than cached: the background is only a few
         // hundred tokens and a stale copy would silently grade against an old
         // job description.
-        List<String> blocks = PracticePrompts.cachedBlocks(knowledge.assemble(userId));
+        List<String> blocks = PracticePrompts.cachedBlocks(knowledge.assemble(userId), preferences.language(userId));
         String body = llm.complete(blocks, prompt, schema);
         try {
             return json.readValue(body, shape);

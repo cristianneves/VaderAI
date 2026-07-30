@@ -3,6 +3,7 @@ package ai.vader.server.session;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -104,7 +105,7 @@ class SessionWebSocketHandlerTest {
         given(jwtDecoder.decode("bad-token")).willThrow(new JwtException("bad signature"));
         given(transcripts.openSession(USER_ID))
                 .willReturn(new SessionRow(SESSION_ID, USER_ID, SessionKind.LIVE, Instant.now(), null));
-        given(sttProviders.create()).willReturn(new SttProvider() {
+        given(sttProviders.create(anyString())).willReturn(new SttProvider() {
             @Override
             public void start(Listener listener) {}
 

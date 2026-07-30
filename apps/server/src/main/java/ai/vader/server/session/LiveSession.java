@@ -5,6 +5,7 @@ import ai.vader.server.llm.AnswerRequest;
 import ai.vader.server.persistence.Answer;
 import ai.vader.server.persistence.AnswerTrigger;
 import ai.vader.server.persistence.TranscriptTurn;
+import ai.vader.server.preferences.Language;
 import ai.vader.server.prompt.PromptAssembler;
 import ai.vader.server.protocol.ServerMessage;
 import ai.vader.server.protocol.ServerMessage.ErrorCode;
@@ -60,6 +61,7 @@ final class LiveSession {
     private volatile UUID sessionId;
     private volatile SttProvider stt;
     private volatile String knowledgeBase = "";
+    private volatile Language language = Language.DEFAULT;
     private volatile ScheduledFuture<?> authDeadline;
 
     LiveSession(
@@ -96,7 +98,7 @@ final class LiveSession {
 
         UUID answerId = UUID.randomUUID();
         String asked = describeAsk(question, image.isPresent());
-        var request = prompts.assemble(recent.snapshot(), knowledgeBase, image, question, memorySnapshot());
+        var request = prompts.assemble(recent.snapshot(), knowledgeBase, image, question, memorySnapshot(), language);
         // Local to this call, so two asks racing each other cannot append into
         // one another's text.
         var spoken = new StringBuilder();
@@ -187,11 +189,12 @@ final class LiveSession {
      * change the cached prompt prefix underneath a live conversation and throw
      * the cache away; an edit takes effect on the next session instead.
      */
-    void authenticated(UUID userId, UUID sessionId, SttProvider stt, String knowledgeBase) {
+    void authenticated(UUID userId, UUID sessionId, SttProvider stt, String knowledgeBase, Language language) {
         this.userId = userId;
         this.sessionId = sessionId;
         this.stt = stt;
         this.knowledgeBase = knowledgeBase;
+        this.language = language;
         if (authDeadline != null) authDeadline.cancel(false);
     }
 

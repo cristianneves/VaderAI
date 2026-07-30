@@ -25,7 +25,7 @@ public class DeepgramSttProviderFactory implements SttProviderFactory {
     }
 
     @Override
-    public SttProvider create() {
-        return new DeepgramSttProvider(http, json, properties);
+    public SttProvider create(String languageCode) {
+        return new DeepgramSttProvider(http, json, properties, languageCode);
     }
 }

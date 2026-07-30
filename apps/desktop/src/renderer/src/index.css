@@ -355,3 +355,13 @@ button.link {
   font-size: 11px;
   cursor: pointer;
 }
+
+#session-language {
+  padding: 4px 6px;
+  border: 1px solid #3a3a4c;
+  border-radius: 4px;
+  background: #12121a;
+  color: #f0f0f5;
+  font: inherit;
+  font-size: 12px;
+}

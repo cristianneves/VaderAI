@@ -3,6 +3,7 @@ package ai.vader.server.prompt;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import ai.vader.server.llm.AnswerRequest;
+import ai.vader.server.preferences.Language;
 import ai.vader.server.stt.TranscriptEvent;
 import java.util.List;
 import java.util.Optional;
@@ -16,9 +17,18 @@ class PromptAssemblerTest {
             new TranscriptEvent(TranscriptEvent.CHANNEL_INTERVIEWER, "Tell me about a hard bug.", true),
             new TranscriptEvent(TranscriptEvent.CHANNEL_USER, "Sure, at Acme...", true));
 
-    /** The common case: no typed question, nothing remembered yet. */
+    /** The common case: no typed question, nothing remembered yet, English. */
     private AnswerRequest assemble(List<TranscriptEvent> turns, String knowledge) {
-        return assembler.assemble(turns, knowledge, Optional.empty(), null, List.of());
+        return assemble(turns, knowledge, Optional.empty(), null, List.of());
+    }
+
+    private AnswerRequest assemble(
+            List<TranscriptEvent> turns,
+            String knowledge,
+            Optional<AnswerRequest.ImageInput> image,
+            String question,
+            List<AnswerRequest.Exchange> priorExchanges) {
+        return assembler.assemble(turns, knowledge, image, question, priorExchanges, Language.ENGLISH);
     }
 
     @Test
@@ -26,7 +36,7 @@ class PromptAssemblerTest {
         AnswerRequest request = assemble(TURNS, "");
 
         assertThat(request.cachedBlocks()).hasSize(1);
-        assertThat(request.cachedBlocks().get(0)).isEqualTo(PromptAssembler.SYSTEM_PROMPT);
+        assertThat(request.cachedBlocks().get(0)).startsWith(PromptAssembler.SYSTEM_PROMPT);
     }
 
     @Test
@@ -75,7 +85,7 @@ class PromptAssemblerTest {
     void pointsTheQuestionAtTheScreenWhenAnImageIsAttached() {
         var image = new AnswerRequest.ImageInput("image/png", "AAAA");
 
-        AnswerRequest request = assembler.assemble(TURNS, "", Optional.of(image), null, List.of());
+        AnswerRequest request = assemble(TURNS, "", Optional.of(image), null, List.of());
 
         assertThat(request.image()).contains(image);
         assertThat(request.conversation()).contains("on the screen");
@@ -91,7 +101,7 @@ class PromptAssemblerTest {
     @Test
     void carriesATypedQuestionInsteadOfPointingAtTheTranscript() {
         AnswerRequest request =
-                assembler.assemble(TURNS, "", Optional.empty(), "Explain that more simply.", List.of());
+                assemble(TURNS, "", Optional.empty(), "Explain that more simply.", List.of());
 
         assertThat(request.conversation())
                 .contains("Explain that more simply.")
@@ -103,14 +113,14 @@ class PromptAssemblerTest {
         var image = new AnswerRequest.ImageInput("image/png", "AAAA");
 
         AnswerRequest request =
-                assembler.assemble(TURNS, "", Optional.of(image), "What is the complexity?", List.of());
+                assemble(TURNS, "", Optional.of(image), "What is the complexity?", List.of());
 
         assertThat(request.conversation()).contains("on the screen").contains("What is the complexity?");
     }
 
     @Test
     void aBlankQuestionFallsBackToTheTranscript() {
-        AnswerRequest request = assembler.assemble(TURNS, "", Optional.empty(), "   ", List.of());
+        AnswerRequest request = assemble(TURNS, "", Optional.empty(), "   ", List.of());
 
         assertThat(request.conversation()).contains("Answer the interviewer's most recent question.");
     }
@@ -118,7 +128,7 @@ class PromptAssemblerTest {
     @Test
     void keepsATypedQuestionOutOfTheCachedPrefix() {
         AnswerRequest request =
-                assembler.assemble(TURNS, "background", Optional.empty(), "what about sharding?", List.of());
+                assemble(TURNS, "background", Optional.empty(), "what about sharding?", List.of());
 
         assertThat(request.cachedBlocks()).noneMatch(block -> block.contains("sharding"));
         assertThat(request.conversation()).contains("sharding");
@@ -131,7 +141,7 @@ class PromptAssemblerTest {
         var earlier = new AnswerRequest.Exchange("Tell me about a hard bug.", "At Acme I traced a deadlock...");
 
         AnswerRequest request =
-                assembler.assemble(TURNS, "", Optional.empty(), "Say that more simply.", List.of(earlier));
+                assemble(TURNS, "", Optional.empty(), "Say that more simply.", List.of(earlier));
 
         assertThat(request.priorExchanges()).containsExactly(earlier);
     }
@@ -142,18 +152,53 @@ class PromptAssemblerTest {
         // cache each time, which is the failure this split exists to prevent.
         var earlier = new AnswerRequest.Exchange("Tell me about a hard bug.", "At Acme I traced a deadlock...");
 
-        AnswerRequest request = assembler.assemble(TURNS, "background", Optional.empty(), null, List.of(earlier));
+        AnswerRequest request = assemble(TURNS, "background", Optional.empty(), null, List.of(earlier));
 
         assertThat(request.cachedBlocks()).noneMatch(block -> block.contains("deadlock"));
         assertThat(request.conversation()).doesNotContain("deadlock");
+    }
+
+    // --- language -----------------------------------------------------------
+
+    @Test
+    void tellsTheModelWhichLanguageToAnswerIn() {
+        var request = assembler.assemble(TURNS, "", Optional.empty(), null, List.of(), Language.PORTUGUESE);
+
+        assertThat(request.cachedBlocks().get(0)).endsWith("Answer in Brazilian Portuguese.");
+    }
+
+    @Test
+    void multilingualFollowsTheSpeakerRatherThanNamingALanguage() {
+        var request = assembler.assemble(TURNS, "", Optional.empty(), null, List.of(), Language.MULTI);
+
+        assertThat(request.cachedBlocks().get(0)).endsWith("Answer in whichever language the interviewer just used.");
+    }
+
+    @Test
+    void theLanguageLivesInTheCachedPrefixBecauseItIsConstantForASession() {
+        var portuguese = assembler.assemble(TURNS, "bg", Optional.empty(), null, List.of(), Language.PORTUGUESE);
+        var english = assembler.assemble(TURNS, "bg", Optional.empty(), null, List.of(), Language.ENGLISH);
+
+        // Different languages must not share a prefix, or the second user's
+        // cache hit would answer in the first user's language.
+        assertThat(portuguese.cachedBlocks()).isNotEqualTo(english.cachedBlocks());
+        assertThat(portuguese.conversation()).isEqualTo(english.conversation());
+    }
+
+    @Test
+    void theSameLanguageProducesAByteIdenticalPrefix() {
+        var first = assembler.assemble(TURNS, "bg", Optional.empty(), null, List.of(), Language.JAPANESE);
+        var second = assembler.assemble(TURNS, "bg", Optional.empty(), "a question", List.of(), Language.JAPANESE);
+
+        assertThat(first.cachedBlocks()).isEqualTo(second.cachedBlocks());
     }
 
     @Test
     void theCachedPrefixIsIdenticalWithAndWithoutMemory() {
         var earlier = new AnswerRequest.Exchange("q", "a");
 
-        var without = assembler.assemble(TURNS, "background", Optional.empty(), null, List.of());
-        var with = assembler.assemble(TURNS, "background", Optional.empty(), "follow up", List.of(earlier));
+        var without = assemble(TURNS, "background", Optional.empty(), null, List.of());
+        var with = assemble(TURNS, "background", Optional.empty(), "follow up", List.of(earlier));
 
         assertThat(with.cachedBlocks()).isEqualTo(without.cachedBlocks());
     }

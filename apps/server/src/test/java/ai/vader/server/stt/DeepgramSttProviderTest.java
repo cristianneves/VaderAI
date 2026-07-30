@@ -70,8 +70,29 @@ class DeepgramSttProviderTest {
     }
 
     private DeepgramSttProvider provider(int reconnectAttempts) {
+        return provider(reconnectAttempts, "en");
+    }
+
+    private DeepgramSttProvider provider(int reconnectAttempts, String languageCode) {
         return new DeepgramSttProvider(
-                new OkHttpClient(), new ObjectMapper(), new DeepgramProperties("test-key", url, reconnectAttempts));
+                new OkHttpClient(),
+                new ObjectMapper(),
+                new DeepgramProperties("test-key", url, reconnectAttempts),
+                languageCode);
+    }
+
+    @Test
+    void sendsTheSessionLanguageToDeepgram() {
+        assertThat(provider(1, "pt-BR").requestUrl())
+                .startsWith(url)
+                .contains("model=nova-3")
+                .contains("multichannel=true")
+                .endsWith("&language=pt-BR");
+    }
+
+    @Test
+    void multilingualIsJustAnotherLanguageCodeOnTheWire() {
+        assertThat(provider(1, "multi").requestUrl()).endsWith("&language=multi");
     }
 
     private void enqueueSocket(WebSocketListener behaviour) {
