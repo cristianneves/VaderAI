@@ -109,17 +109,18 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
         switch (parsed) {
             case ClientMessage.Hello hello -> onHello(session, live, hello);
             case ClientMessage.Ping ignored -> live.send(new ServerMessage.Pong());
-            case ClientMessage.Ask ignored -> {
+            case ClientMessage.Ask ask -> {
                 if (!requireAuth(session, live)) return;
                 live.turns().recordManualAsk(System.currentTimeMillis());
-                live.ask(AnswerTrigger.MANUAL, Optional.empty());
+                live.ask(AnswerTrigger.MANUAL, Optional.empty(), ask.question());
             }
             case ClientMessage.Screenshot shot -> {
                 if (!requireAuth(session, live)) return;
                 live.turns().recordManualAsk(System.currentTimeMillis());
                 live.ask(
                         AnswerTrigger.SCREENSHOT,
-                        Optional.of(new AnswerRequest.ImageInput(shot.mimeType(), shot.dataBase64())));
+                        Optional.of(new AnswerRequest.ImageInput(shot.mimeType(), shot.dataBase64())),
+                        shot.note());
             }
         }
     }
@@ -189,7 +190,7 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
                 timers.schedule(
                         () -> {
                             if (live.turns().pollAutoAsk(System.currentTimeMillis())) {
-                                live.ask(AnswerTrigger.AUTO, Optional.empty());
+                                live.ask(AnswerTrigger.AUTO, Optional.empty(), null);
                             }
                         },
                         TurnDetector.SILENCE_MS,

@@ -12,7 +12,9 @@ import ai.vader.server.stt.SttProvider;
 import ai.vader.server.stt.TranscriptEvent;
 import ai.vader.server.turn.TurnDetector;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,6 +37,13 @@ final class LiveSession {
     /** Finalized turns are written in batches; per-word writes would hammer the DB. */
     private static final int BATCH_SIZE = 20;
     private static final int CONTEXT_TURNS = 50;
+    /**
+     * How many completed answers are replayed to the model as prior turns. These
+     * sit after the cache breakpoint, so every one of them is billed in full on
+     * every subsequent question — three is enough for "explain that again" to
+     * work without the request growing all session.
+     */
+    static final int MEMORY_EXCHANGES = 3;
 
     private final WebSocketSession socket;
     private final ObjectMapper json;
@@ -44,6 +53,7 @@ final class LiveSession {
     private final TranscriptRingBuffer recent = new TranscriptRingBuffer(CONTEXT_TURNS);
     private final TurnDetector turns = new TurnDetector();
     private final List<TranscriptTurn> pending = new ArrayList<>();
+    private final Deque<AnswerRequest.Exchange> memory = new ArrayDeque<>();
     private final AtomicReference<AnswerEngine.AnswerStream> inFlight = new AtomicReference<>();
 
     private volatile UUID userId;
@@ -76,13 +86,17 @@ final class LiveSession {
      * <p>The deltas are accumulated as well as sent, so the session can be
      * reviewed after the call. Only a completed answer is stored: cancelling is
      * deliberate, and a truncated answer that was replaced on purpose is not
-     * worth keeping in the history.
+     * worth keeping in the history. The same rule governs what enters the
+     * follow-up memory — a cancelled answer is not something the model said.
+     *
+     * @param question what the user typed, or null to answer from the transcript
      */
-    void ask(AnswerTrigger trigger, Optional<AnswerRequest.ImageInput> image) {
+    void ask(AnswerTrigger trigger, Optional<AnswerRequest.ImageInput> image, String question) {
         cancelInFlight();
 
         UUID answerId = UUID.randomUUID();
-        var request = prompts.assemble(recent.snapshot(), knowledgeBase, image);
+        String asked = describeAsk(question, image.isPresent());
+        var request = prompts.assemble(recent.snapshot(), knowledgeBase, image, question, memorySnapshot());
         // Local to this call, so two asks racing each other cannot append into
         // one another's text.
         var spoken = new StringBuilder();
@@ -101,6 +115,7 @@ final class LiveSession {
             @Override
             public void onComplete(AnswerEngine.AnswerUsage usage) {
                 recordAnswer(spoken.toString(), trigger);
+                remember(asked, spoken.toString());
                 send(new ServerMessage.AnswerEnd(answerId));
                 log.info(
                         "answer {} tokens in={} out={} cacheRead={} cacheWrite={}",
@@ -119,6 +134,36 @@ final class LiveSession {
                 send(new ServerMessage.AnswerEnd(answerId));
             }
         }));
+    }
+
+    /**
+     * What the model is told it was asked, when this answer is replayed as a
+     * prior turn. Short by design — the transcript itself already travels in
+     * every request, and repeating it once per remembered exchange would grow
+     * the prompt quadratically over a session.
+     */
+    private String describeAsk(String question, boolean hasImage) {
+        if (question != null && !question.isBlank()) return question.strip();
+        if (hasImage) return "(asked about what was on the screen)";
+        return recent.snapshot().reversed().stream()
+                .filter(turn -> turn.channel() == TranscriptEvent.CHANNEL_INTERVIEWER)
+                .findFirst()
+                .map(TranscriptEvent::text)
+                .orElse("(asked about the conversation so far)");
+    }
+
+    private void remember(String asked, String answer) {
+        if (answer.isBlank()) return;
+        synchronized (memory) {
+            if (memory.size() == MEMORY_EXCHANGES) memory.removeFirst();
+            memory.addLast(new AnswerRequest.Exchange(asked, answer));
+        }
+    }
+
+    private List<AnswerRequest.Exchange> memorySnapshot() {
+        synchronized (memory) {
+            return List.copyOf(memory);
+        }
     }
 
     private void recordAnswer(String content, AnswerTrigger trigger) {

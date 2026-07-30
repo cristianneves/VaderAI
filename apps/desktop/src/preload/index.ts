@@ -24,6 +24,12 @@ const api = {
   reportError: (message: string): void => ipcRenderer.send('app:report-error', message),
   /** Where that log lives, for telling the user where to look. */
   getLogPath: (): Promise<string> => ipcRenderer.invoke('app:log-path'),
+  /**
+   * Borrows keyboard focus while the ask bar is open. The overlay is
+   * `focusable: false` so it never steals focus from the meeting, which also
+   * means a text field gets no keystrokes until this is turned on.
+   */
+  setComposing: (composing: boolean): void => ipcRenderer.send('overlay:composing', composing),
   /** Subscribes to hotkey actions main forwards. Returns an unsubscribe fn. */
   onOverlayAction: (handler: (action: OverlayAction) => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, action: OverlayAction): void => handler(action);

@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { useEffect, useRef, useState } from 'react';
 import type { CaptureProtection } from '../../shared/overlay';
 import { applyAnswer, NO_ANSWER, type AnswerState } from './answer/answer';
+import { AskBar } from './answer/AskBar';
 import { AudioCapture, type CaptureState } from './audio/capture';
 import { encodeWav, FrameBuffer } from './audio/pcm';
 import { SignIn } from './auth/SignIn';
@@ -23,6 +24,7 @@ import { fetchKnowledge } from './settings/api';
 import type { KnowledgeView } from './settings/knowledge';
 import { Settings } from './settings/Settings';
 import { applyTranscript, speakerOf, type TranscriptLine } from './transcript/log';
+import { useAutoScroll } from './ui/auto-scroll';
 
 const DUMP_SECONDS = 10;
 const FRAMES_PER_SECOND = 1000 / AUDIO_FRAME_MS;
@@ -49,9 +51,15 @@ export function App(): React.JSX.Element {
   const [micPermission, setMicPermission] = useState<MicPermission>('unknown');
   const [knowledge, setKnowledge] = useState<KnowledgeView | null>(null);
   const [skipped, setSkipped] = useState(() => isDismissed(localStorage));
+  const [composing, setComposing] = useState(false);
+  /** Last server-reported failure. Cleared when a session comes back up. */
+  const [problem, setProblem] = useState<string | null>(null);
 
   /** Clicking the open panel's button returns to the live view. */
   const toggle = (panel: View): void => setView((current) => (current === panel ? 'live' : panel));
+
+  const transcriptPane = useAutoScroll<HTMLElement>(lines);
+  const answerPane = useAutoScroll<HTMLElement>(answer.text);
 
   const frames = useRef(new FrameBuffer(DUMP_SECONDS * FRAMES_PER_SECOND));
   const socket = useRef<SessionSocket | null>(null);
@@ -78,6 +86,10 @@ export function App(): React.JSX.Element {
           break;
         case 'ask':
           socket.current?.ask();
+          break;
+        case 'compose':
+          // Main has already granted focus; this only mounts the field.
+          setComposing(true);
           break;
         case 'screenshot':
           void window.vader.captureScreen().then((shot) => {
@@ -148,6 +160,12 @@ export function App(): React.JSX.Element {
               // Practice mode addresses this session over REST, so the id has to
               // outlive the frame that carried it.
               setSessionId(message.sessionId);
+              setProblem(null);
+              break;
+            case 'error':
+              // Until Phase 9 these were dropped on the floor: a failed
+              // transcription or answer just looked like silence.
+              setProblem(message.message);
               break;
             case 'transcript':
               setLines((current) => applyTranscript(current, message));
@@ -167,7 +185,12 @@ export function App(): React.JSX.Element {
               break;
           }
         },
-        onState: setConnection,
+        onState: (state, detail) => {
+          setConnection(state);
+          // The detail is the only place "gave up after 5 reconnect attempts"
+          // is ever said; the bare state word does not carry it.
+          if (state === 'error' && detail !== undefined) setProblem(detail);
+        },
       });
       socket.current.connect(token);
     }
@@ -179,6 +202,12 @@ export function App(): React.JSX.Element {
     socket.current?.close();
     setConnection('idle');
     setSessionId(null);
+  }
+
+  /** Hands keyboard focus back to the meeting. Every exit from the ask bar. */
+  function closeComposer(): void {
+    setComposing(false);
+    window.vader.setComposing(false);
   }
 
   async function dump(): Promise<void> {
@@ -250,7 +279,7 @@ export function App(): React.JSX.Element {
         />
       ) : (
         <>
-          <section className="pane transcript">
+          <section className="pane transcript" ref={transcriptPane.ref} onScroll={transcriptPane.onScroll}>
             <h2>Transcript</h2>
             {lines.length === 0 ? (
               <p className="empty">
@@ -266,19 +295,32 @@ export function App(): React.JSX.Element {
             )}
           </section>
 
-          <section className="pane answer">
+          <section className="pane answer" ref={answerPane.ref} onScroll={answerPane.onScroll}>
             <h2>Answer{answer.streaming && <span className="cursor"> ▍</span>}</h2>
             {answer.text === '' ? (
               <p className="empty">
                 {answer.streaming
                   ? 'Thinking…'
-                  : 'Ctrl+Enter to ask · Ctrl+H to ask about the screen'}
+                  : 'Ctrl+Enter to ask · Ctrl+K to type · Ctrl+H to ask about the screen'}
               </p>
             ) : (
               <p className="answer-text">{answer.text}</p>
             )}
           </section>
+
+          <AskBar
+            open={composing}
+            disabled={connection !== 'ready'}
+            onAsk={(question) => socket.current?.ask(question)}
+            onClose={closeComposer}
+          />
         </>
+      )}
+
+      {problem !== null && (
+        <p className="problem" onClick={() => setProblem(null)} title="Dismiss">
+          {problem}
+        </p>
       )}
 
       <footer className="controls">

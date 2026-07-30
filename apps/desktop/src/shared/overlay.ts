@@ -7,6 +7,7 @@
 export type OverlayAction =
   | { readonly type: 'toggle' }
   | { readonly type: 'ask' }
+  | { readonly type: 'compose' }
   | { readonly type: 'screenshot' }
   | { readonly type: 'clear' }
   | { readonly type: 'move'; readonly dx: number; readonly dy: number };

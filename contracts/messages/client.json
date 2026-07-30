@@ -6,7 +6,8 @@
   },
   "ask": {
     "type": "ask",
-    "trigger": "manual"
+    "trigger": "manual",
+    "question": "Explain that last answer more simply."
   },
   "screenshot": {
     "type": "screenshot",

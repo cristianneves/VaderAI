@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { clientMessageSchema, serverMessageSchema } from './index';
+import { clientMessageSchema, MAX_QUESTION_CHARS, serverMessageSchema } from './index';
 
 /**
  * The TypeScript half of the wire contract. The Java side asserts the same
@@ -38,6 +38,26 @@ describe('client fixtures', () => {
   it('rejects a hello with no token', () => {
     expect(() =>
       clientMessageSchema.parse({ ...(client['hello'] as object), accessToken: '' }),
+    ).toThrow();
+  });
+
+  it('accepts an ask with no question — the auto-trigger sends none', () => {
+    expect(clientMessageSchema.parse({ type: 'ask', trigger: 'auto' })).toEqual({
+      type: 'ask',
+      trigger: 'auto',
+    });
+  });
+
+  it('rejects an empty question rather than asking the model about nothing', () => {
+    expect(() => clientMessageSchema.parse({ ...(client['ask'] as object), question: '' })).toThrow();
+  });
+
+  it('rejects a question over the ceiling', () => {
+    expect(() =>
+      clientMessageSchema.parse({
+        ...(client['ask'] as object),
+        question: 'x'.repeat(MAX_QUESTION_CHARS + 1),
+      }),
     ).toThrow();
   });
 });

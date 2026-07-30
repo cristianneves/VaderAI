@@ -73,7 +73,13 @@ class AnthropicAnswerEngineTest {
             """;
 
     private static AnswerRequest request(Optional<AnswerRequest.ImageInput> image) {
-        return new AnswerRequest(List.of("system prompt", "knowledge base"), "Interviewer: hello", image);
+        return request(image, List.of());
+    }
+
+    private static AnswerRequest request(
+            Optional<AnswerRequest.ImageInput> image, List<AnswerRequest.Exchange> priorExchanges) {
+        return new AnswerRequest(
+                List.of("system prompt", "knowledge base"), priorExchanges, "Interviewer: hello", image);
     }
 
     @BeforeEach
@@ -191,6 +197,45 @@ class AnthropicAnswerEngineTest {
 
         await().atMost(Duration.ofSeconds(15)).until(() -> !errors.isEmpty());
         assertThat(usage.get()).isNull();
+    }
+
+    @Test
+    void replaysPriorExchangesAsRealTurnsBeforeTheCurrentQuestion() throws Exception {
+        enqueueStream();
+
+        engine.stream(
+                request(
+                        Optional.empty(),
+                        List.of(
+                                new AnswerRequest.Exchange("Tell me about a hard bug.", "At Acme I traced a deadlock."),
+                                new AnswerRequest.Exchange("Shorter.", "I debugged a deadlock at Acme."))),
+                listener);
+        await().atMost(Duration.ofSeconds(10)).until(() -> usage.get() != null);
+
+        var messages = new ObjectMapper()
+                .readTree(server.takeRequest().getBody().readUtf8())
+                .get("messages");
+        assertThat(messages).hasSize(5);
+        assertThat(messages.get(0).get("role").asText()).isEqualTo("user");
+        assertThat(messages.get(0).get("content").toString()).contains("Tell me about a hard bug.");
+        assertThat(messages.get(1).get("role").asText()).isEqualTo("assistant");
+        assertThat(messages.get(1).get("content").toString()).contains("traced a deadlock");
+        assertThat(messages.get(3).get("role").asText()).isEqualTo("assistant");
+        // The live question stays last, so the model answers it and not a replay.
+        assertThat(messages.get(4).get("role").asText()).isEqualTo("user");
+        assertThat(messages.get(4).get("content").toString()).contains("Interviewer: hello");
+    }
+
+    @Test
+    void memoryStaysOutOfTheCachedPrefix() throws Exception {
+        enqueueStream();
+
+        engine.stream(
+                request(Optional.empty(), List.of(new AnswerRequest.Exchange("q", "a remembered answer"))), listener);
+        await().atMost(Duration.ofSeconds(10)).until(() -> usage.get() != null);
+
+        var body = new ObjectMapper().readTree(server.takeRequest().getBody().readUtf8());
+        assertThat(body.get("system").toString()).doesNotContain("a remembered answer");
     }
 
     @Test

@@ -39,25 +39,41 @@ public class PromptAssembler {
 
             If the transcript is garbled or the question is unclear, answer the most \
             likely reading rather than asking for clarification — they cannot relay a \
-            clarifying question mid-interview.\
+            clarifying question mid-interview.
+
+            They can also type a request straight to you — a follow-up like "explain \
+            that more simply", or an instruction like "shorter". That comes from them, \
+            not from the interviewer: apply it to the answer you just gave rather than \
+            treating it as a new interview question.\
             """;
 
     /**
      * @param recentTurns conversation tail, oldest first
      * @param knowledgeBase the user's résumé and notes; empty until Phase 5 fills it
+     * @param question what the user typed in the ask bar, or null to answer the
+     *     interviewer's most recent question from the transcript
+     * @param priorExchanges answers already given this session, oldest first
      */
     public AnswerRequest assemble(
-            List<TranscriptEvent> recentTurns, String knowledgeBase, Optional<AnswerRequest.ImageInput> image) {
+            List<TranscriptEvent> recentTurns,
+            String knowledgeBase,
+            Optional<AnswerRequest.ImageInput> image,
+            String question,
+            List<AnswerRequest.Exchange> priorExchanges) {
         List<String> cached = new ArrayList<>();
         cached.add(SYSTEM_PROMPT);
         if (knowledgeBase != null && !knowledgeBase.isBlank()) {
             cached.add("Background on the person you are helping:\n\n" + knowledgeBase.strip());
         }
 
-        return new AnswerRequest(List.copyOf(cached), conversation(recentTurns, image.isPresent()), image);
+        return new AnswerRequest(
+                List.copyOf(cached),
+                List.copyOf(priorExchanges),
+                conversation(recentTurns, image.isPresent(), question),
+                image);
     }
 
-    private String conversation(List<TranscriptEvent> turns, boolean hasImage) {
+    private String conversation(List<TranscriptEvent> turns, boolean hasImage, String question) {
         var text = new StringBuilder();
         if (turns.isEmpty()) {
             text.append("(no transcript yet)");
@@ -69,10 +85,20 @@ public class PromptAssembler {
                         .append('\n');
             }
         }
-        text.append('\n')
-                .append(hasImage
-                        ? "Answer the interviewer's question about what is on the screen above."
-                        : "Answer the interviewer's most recent question.");
+        text.append('\n').append(instruction(hasImage, question));
         return text.toString();
+    }
+
+    private String instruction(boolean hasImage, String question) {
+        boolean typed = question != null && !question.isBlank();
+        if (typed && hasImage) {
+            return "They are asking you this about what is on the screen above:\n\n" + question.strip();
+        }
+        if (typed) {
+            return "They are asking you this directly:\n\n" + question.strip();
+        }
+        return hasImage
+                ? "Answer the interviewer's question about what is on the screen above."
+                : "Answer the interviewer's most recent question.";
     }
 }
