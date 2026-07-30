@@ -2,7 +2,7 @@
 
 A real-time AI copilot for interviews and study sessions. VaderAI runs as an always-on-top desktop overlay on Windows that listens to your call, watches your screen, and streams answers only you can see.
 
-**Status:** Phase 6 of 8. The overlay captures both audio channels, streams them to the backend, and renders a speaker-attributed transcript plus a streaming answer that fires on its own when the interviewer stops talking — grounded in a résumé, job description, and notes you supply. There is also a practice mode that runs a graded mock interview with no live call. Provider keys (Deepgram, Anthropic) are needed to run it against the real services.
+**Status:** Phase 7 of 8. The overlay captures both audio channels, streams them to the backend, and renders a speaker-attributed transcript plus a streaming answer that fires on its own when the interviewer stops talking — grounded in a résumé, job description, and notes you supply. There is also a practice mode that runs a graded mock interview with no live call, and every session is kept for review and export afterwards. Provider keys (Deepgram, Anthropic) are needed to run it against the real services.
 
 ---
 
@@ -21,6 +21,7 @@ screen capture (screenshots)  ──────→  Claude  →  answer streame
 - **Screenshot Q&A** — capture a coding problem or a slide and ask about it.
 - **Knowledge base** — your résumé, the job description, and personal notes ground every answer.
 - **Practice mode** — mock interviews with graded feedback, no live call required.
+- **Session history** — every session is kept: review the transcript with the answers in place, or export it to Markdown.
 - **Excluded from screen sharing** — the overlay uses Windows' `WDA_EXCLUDEFROMCAPTURE`, enforced by the desktop compositor.
 
 **Target:** first visible token within ~1.3–1.6 s of the question ending.
@@ -132,6 +133,36 @@ as above.
 
 Starting without a job description on file returns `409` and says so — there is
 nothing to write questions from.
+
+### Session history
+
+**History** in the overlay header lists every past session with its date,
+duration, and how much was in it. Opening one shows the transcript **with the
+answers in place** — the two are stored separately and interleaved by timestamp,
+so each answer sits after the question that prompted it. A screenshot answer is
+labelled, because there is no spoken question above it to pair with.
+
+Answers are recorded when their stream finishes. An answer cancelled mid-stream
+is not kept: cancelling is deliberate — a new question makes the previous one
+stale — so the half sentence that got replaced is not worth reviewing.
+
+Practice sessions are reviewed through their questions and grades rather than the
+transcript, since that is where a practice run's answers live. Reopening one
+costs nothing; only the closing report calls the model, and history does not.
+
+**Export Markdown** writes the session through a native save dialog. **Delete**
+removes the session and, by database cascade, its transcript, its answers, and
+any grades — it asks first.
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| `GET` | `/v1/sessions` | the list, newest first, with counts |
+| `GET` | `/v1/sessions/{id}` | one session with its turns and answers |
+| `DELETE` | `/v1/sessions/{id}` | delete, cascading to everything below it |
+
+Note the plural. `/v1/session` (singular) is the WebSocket endpoint and is public
+because it authenticates itself with its first frame; these are one character
+away from it and are not.
 
 ### Security model
 

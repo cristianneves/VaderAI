@@ -2,6 +2,8 @@ package ai.vader.server.session;
 
 import ai.vader.server.llm.AnswerEngine;
 import ai.vader.server.llm.AnswerRequest;
+import ai.vader.server.persistence.Answer;
+import ai.vader.server.persistence.AnswerTrigger;
 import ai.vader.server.persistence.TranscriptTurn;
 import ai.vader.server.prompt.PromptAssembler;
 import ai.vader.server.protocol.ServerMessage;
@@ -70,22 +72,35 @@ final class LiveSession {
     /**
      * Streams one answer. A trigger arriving while an answer is still streaming
      * cancels it — the previous question is stale the moment a new one lands.
+     *
+     * <p>The deltas are accumulated as well as sent, so the session can be
+     * reviewed after the call. Only a completed answer is stored: cancelling is
+     * deliberate, and a truncated answer that was replaced on purpose is not
+     * worth keeping in the history.
      */
-    void ask(Optional<AnswerRequest.ImageInput> image) {
+    void ask(AnswerTrigger trigger, Optional<AnswerRequest.ImageInput> image) {
         cancelInFlight();
 
         UUID answerId = UUID.randomUUID();
         var request = prompts.assemble(recent.snapshot(), knowledgeBase, image);
+        // Local to this call, so two asks racing each other cannot append into
+        // one another's text.
+        var spoken = new StringBuilder();
         send(new ServerMessage.AnswerStart(answerId));
 
         inFlight.set(answers.stream(request, new AnswerEngine.Listener() {
             @Override
             public void onDelta(String text) {
+                // Append before sending: a send can fail on a slow client, and
+                // the stored answer should be what the model produced rather
+                // than what survived the socket.
+                spoken.append(text);
                 send(new ServerMessage.AnswerDelta(answerId, text));
             }
 
             @Override
             public void onComplete(AnswerEngine.AnswerUsage usage) {
+                recordAnswer(spoken.toString(), trigger);
                 send(new ServerMessage.AnswerEnd(answerId));
                 log.info(
                         "answer {} tokens in={} out={} cacheRead={} cacheWrite={}",
@@ -98,11 +113,23 @@ final class LiveSession {
 
             @Override
             public void onError(Throwable cause) {
+                // Nothing recorded: a failed answer was never given.
                 log.warn("answer {} failed", answerId, cause);
                 send(new ServerMessage.Failure(ErrorCode.LLM_FAILED, "could not generate an answer"));
                 send(new ServerMessage.AnswerEnd(answerId));
             }
         }));
+    }
+
+    private void recordAnswer(String content, AnswerTrigger trigger) {
+        if (content.isBlank()) return;
+        try {
+            transcripts.saveAnswer(Answer.of(sessionId, userId, content, trigger));
+        } catch (Exception failed) {
+            // Losing a history row must not take down a live answer that the
+            // user has already read on screen.
+            log.warn("could not record answer on session {}", sessionId, failed);
+        }
     }
 
     void cancelInFlight() {

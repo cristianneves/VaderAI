@@ -27,4 +27,15 @@ class VaderAiApplicationTests {
         String body = rest.getForObject("http://localhost:" + port + "/actuator/health", String.class);
         assertThat(body).contains("\"status\":\"UP\"");
     }
+
+    @Test
+    void sessionHistoryRequiresABearerToken() {
+        // /v1/session (singular) is permitAll because the WebSocket authenticates
+        // itself with its first frame. The history routes are one character away
+        // from that, so this pins the difference rather than trusting that
+        // Spring's exact-path matcher keeps behaving.
+        var response = rest.getForEntity("http://localhost:" + port + "/v1/sessions", String.class);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(401);
+    }
 }

@@ -4,11 +4,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
+import ai.vader.server.llm.AnswerEngine;
+import ai.vader.server.persistence.Answer;
+import ai.vader.server.persistence.AnswerTrigger;
 import ai.vader.server.persistence.SessionKind;
 import ai.vader.server.persistence.SessionRow;
 import ai.vader.server.stt.SttProvider;
 import ai.vader.server.stt.SttProviderFactory;
+import org.mockito.ArgumentCaptor;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
@@ -57,7 +63,33 @@ class SessionWebSocketHandlerTest {
     @MockitoBean
     private TranscriptService transcripts;
 
+    @MockitoBean
+    private AnswerEngine answerEngine;
+
     private final List<ByteBuffer> audioSentToStt = new CopyOnWriteArrayList<>();
+
+    /** Replays two deltas and finishes, as a successful answer would. */
+    private void stubACompletedAnswer() {
+        given(answerEngine.stream(any(), any())).willAnswer(invocation -> {
+            AnswerEngine.Listener listener = invocation.getArgument(1);
+            listener.onDelta("At Acme I cut deploy time ");
+            listener.onDelta("from 40 minutes to 6.");
+            listener.onComplete(new AnswerEngine.AnswerUsage(120, 42, 0, 0));
+            return (AnswerEngine.AnswerStream) () -> {};
+        });
+    }
+
+    /** Streams nothing and never completes — the shape of an answer still in flight. */
+    private void stubAnAnswerThatNeverFinishes() {
+        given(answerEngine.stream(any(), any())).willAnswer(invocation -> (AnswerEngine.AnswerStream) () -> {});
+    }
+
+    private Client authenticated() throws Exception {
+        var client = connect();
+        client.send("{\"type\":\"hello\",\"protocolVersion\":1,\"accessToken\":\"" + GOOD_TOKEN + "\"}");
+        await().atMost(Duration.ofSeconds(5)).until(() -> !client.messages.isEmpty());
+        return client;
+    }
 
     @BeforeEach
     void stubCollaborators() {
@@ -166,6 +198,59 @@ class SessionWebSocketHandlerTest {
 
         await().atMost(Duration.ofSeconds(5)).until(() -> !client.messages.isEmpty());
         assertThat(client.messages.get(0)).contains("\"type\":\"pong\"");
+    }
+
+    @Test
+    void aCompletedAnswerIsRecordedOnceWithItsTrigger() throws Exception {
+        stubACompletedAnswer();
+        var client = authenticated();
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"type\":\"answer_end\"")));
+        var recorded = ArgumentCaptor.forClass(Answer.class);
+        verify(transcripts).saveAnswer(recorded.capture());
+        assertThat(recorded.getValue().content()).isEqualTo("At Acme I cut deploy time from 40 minutes to 6.");
+        assertThat(recorded.getValue().trigger()).isEqualTo(AnswerTrigger.MANUAL);
+        assertThat(recorded.getValue().sessionId()).isEqualTo(SESSION_ID);
+        assertThat(recorded.getValue().userId()).isEqualTo(USER_ID);
+    }
+
+    @Test
+    void aScreenshotAnswerRecordsThatItCameFromTheScreen() throws Exception {
+        stubACompletedAnswer();
+        var client = authenticated();
+
+        client.send("{\"type\":\"screenshot\",\"mimeType\":\"image/png\",\"dataBase64\":\"QUJD\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"type\":\"answer_end\"")));
+        var recorded = ArgumentCaptor.forClass(Answer.class);
+        verify(transcripts).saveAnswer(recorded.capture());
+        // Without this the review screen would show the answer with no question
+        // in front of it and no way to explain why.
+        assertThat(recorded.getValue().trigger()).isEqualTo(AnswerTrigger.SCREENSHOT);
+    }
+
+    @Test
+    void anAnswerCancelledMidStreamIsNotRecorded() throws Exception {
+        stubAnAnswerThatNeverFinishes();
+        var client = authenticated();
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"type\":\"answer_start\"")));
+        // A second question cancels the first; the half answer the user saw was
+        // replaced on purpose and should not reach the history.
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream()
+                                .filter(m -> m.contains("\"type\":\"answer_start\""))
+                                .count()
+                        == 2);
+
+        verify(transcripts, never()).saveAnswer(any());
     }
 
     @Test

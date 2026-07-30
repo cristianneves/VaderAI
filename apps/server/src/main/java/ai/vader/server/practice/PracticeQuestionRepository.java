@@ -9,9 +9,12 @@ import org.springframework.data.repository.CrudRepository;
  * Every finder takes the user id. The service role bypasses RLS, so a query
  * without it would happily return another user's rows.
  */
-interface PracticeQuestionRepository extends CrudRepository<PracticeQuestion, Long> {
+public interface PracticeQuestionRepository extends CrudRepository<PracticeQuestion, Long> {
 
     List<PracticeQuestion> findBySessionIdAndUserIdOrderByPositionAsc(UUID sessionId, UUID userId);
 
     Optional<PracticeQuestion> findBySessionIdAndUserIdAndPosition(UUID sessionId, UUID userId, short position);
+
+    /** Read by the history list, which counts a practice run's questions rather than its answers. */
+    long countBySessionIdAndUserId(UUID sessionId, UUID userId);
 }
