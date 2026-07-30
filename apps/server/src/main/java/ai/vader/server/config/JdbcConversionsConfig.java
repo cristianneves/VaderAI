@@ -1,6 +1,7 @@
 package ai.vader.server.config;
 
 import ai.vader.server.knowledge.KnowledgeKind;
+import ai.vader.server.persistence.AnswerTrigger;
 import ai.vader.server.persistence.SessionKind;
 import java.util.List;
 import org.springframework.context.annotation.Bean;
@@ -61,12 +62,34 @@ public class JdbcConversionsConfig {
         }
     }
 
+    @WritingConverter
+    enum AnswerTriggerToString implements Converter<AnswerTrigger, String> {
+        INSTANCE;
+
+        @Override
+        public String convert(AnswerTrigger source) {
+            return source.wireName();
+        }
+    }
+
+    @ReadingConverter
+    enum StringToAnswerTrigger implements Converter<String, AnswerTrigger> {
+        INSTANCE;
+
+        @Override
+        public AnswerTrigger convert(String source) {
+            return AnswerTrigger.fromWireName(source);
+        }
+    }
+
     @Bean
     JdbcCustomConversions jdbcCustomConversions() {
         return new JdbcCustomConversions(List.of(
                 KnowledgeKindToString.INSTANCE,
                 StringToKnowledgeKind.INSTANCE,
                 SessionKindToString.INSTANCE,
-                StringToSessionKind.INSTANCE));
+                StringToSessionKind.INSTANCE,
+                AnswerTriggerToString.INSTANCE,
+                StringToAnswerTrigger.INSTANCE));
     }
 }

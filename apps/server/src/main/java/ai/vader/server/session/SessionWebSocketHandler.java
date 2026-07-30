@@ -3,6 +3,7 @@ package ai.vader.server.session;
 import ai.vader.server.llm.AnswerEngine;
 import ai.vader.server.llm.AnswerRequest;
 import ai.vader.server.knowledge.KnowledgeService;
+import ai.vader.server.persistence.AnswerTrigger;
 import ai.vader.server.prompt.PromptAssembler;
 import ai.vader.server.protocol.ClientMessage;
 import ai.vader.server.protocol.ServerMessage;
@@ -111,12 +112,14 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
             case ClientMessage.Ask ignored -> {
                 if (!requireAuth(session, live)) return;
                 live.turns().recordManualAsk(System.currentTimeMillis());
-                live.ask(Optional.empty());
+                live.ask(AnswerTrigger.MANUAL, Optional.empty());
             }
             case ClientMessage.Screenshot shot -> {
                 if (!requireAuth(session, live)) return;
                 live.turns().recordManualAsk(System.currentTimeMillis());
-                live.ask(Optional.of(new AnswerRequest.ImageInput(shot.mimeType(), shot.dataBase64())));
+                live.ask(
+                        AnswerTrigger.SCREENSHOT,
+                        Optional.of(new AnswerRequest.ImageInput(shot.mimeType(), shot.dataBase64())));
             }
         }
     }
@@ -185,7 +188,9 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
                 // says in the meantime disarms it inside the detector.
                 timers.schedule(
                         () -> {
-                            if (live.turns().pollAutoAsk(System.currentTimeMillis())) live.ask(Optional.empty());
+                            if (live.turns().pollAutoAsk(System.currentTimeMillis())) {
+                                live.ask(AnswerTrigger.AUTO, Optional.empty());
+                            }
                         },
                         TurnDetector.SILENCE_MS,
                         TimeUnit.MILLISECONDS);

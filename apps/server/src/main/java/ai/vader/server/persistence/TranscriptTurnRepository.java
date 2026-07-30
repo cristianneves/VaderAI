@@ -7,4 +7,6 @@ import org.springframework.data.repository.CrudRepository;
 public interface TranscriptTurnRepository extends CrudRepository<TranscriptTurn, Long> {
 
     List<TranscriptTurn> findBySessionIdAndUserIdOrderByIdAsc(UUID sessionId, UUID userId);
+
+    long countBySessionIdAndUserId(UUID sessionId, UUID userId);
 }
