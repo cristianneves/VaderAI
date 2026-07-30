@@ -10,3 +10,9 @@ packages:
 allowBuilds:
   electron: true
   esbuild: true
+  # Phase 8: electron-builder's helper binary is fetched by its postinstall.
+  app-builder-bin: true
+  # Pulled in by electron-builder but only used by the Squirrel.Windows target,
+  # which we do not build — we ship NSIS and portable. Nothing needs its
+  # postinstall, so it stays blocked.
+  electron-winstaller: false

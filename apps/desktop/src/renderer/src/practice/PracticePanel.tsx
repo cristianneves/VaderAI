@@ -40,7 +40,10 @@ export function PracticePanel({
     try {
       await action();
     } catch (failed) {
-      onEvent({ type: 'error', message: failed instanceof Error ? failed.message : String(failed) });
+      onEvent({
+        type: 'error',
+        message: failed instanceof Error ? failed.message : String(failed),
+      });
     }
   }
 
@@ -146,13 +149,15 @@ export function PracticePanel({
             </ul>
           )}
           <p className="answer-text">{state.report.summary}</p>
-          {state.report.questions.filter((graded) => graded.feedback !== null).map((graded) => (
-            <div key={graded.position} className="knowledge-slot">
-              <p className="question">{graded.question}</p>
-              <Scores question={graded} />
-              <p className="answer-text">{graded.feedback}</p>
-            </div>
-          ))}
+          {state.report.questions
+            .filter((graded) => graded.feedback !== null)
+            .map((graded) => (
+              <div key={graded.position} className="knowledge-slot">
+                <p className="question">{graded.question}</p>
+                <Scores question={graded} />
+                <p className="answer-text">{graded.feedback}</p>
+              </div>
+            ))}
           <div className="row">
             <button onClick={() => onEvent({ type: 'reset' })}>Start over</button>
           </div>

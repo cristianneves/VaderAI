@@ -1,6 +1,6 @@
 {
   "name": "vaderai",
-  "version": "0.0.0",
+  "version": "0.8.0",
   "private": true,
   "description": "Real-time AI copilot for interviews and study sessions — TypeScript workspace (Electron desktop + shared protocol). The backend lives in apps/server and is a Java/Maven project, not a pnpm workspace member.",
   "packageManager": "pnpm@11.17.0",
@@ -13,6 +13,8 @@
     "dev:desktop": "pnpm --filter @vaderai/protocol build && pnpm -F @vaderai/desktop dev",
     "build": "pnpm -r build && pnpm build:server",
     "build:server": "cd apps/server && .\\mvnw.cmd -B package",
+    "package:desktop": "pnpm --filter @vaderai/protocol build && pnpm -F @vaderai/desktop package",
+    "package:server": "docker build -t vaderai-server:local apps/server",
     "test": "pnpm -r test",
     "test:server": "cd apps/server && .\\mvnw.cmd -B test",
     "typecheck": "pnpm --filter @vaderai/protocol build && pnpm -r typecheck",

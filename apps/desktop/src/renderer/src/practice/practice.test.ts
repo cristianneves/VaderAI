@@ -43,7 +43,8 @@ const run = (events: PracticeEvent[], from: PracticeState = NO_PRACTICE): Practi
   events.reduce(applyPractice, from);
 
 /** Loaded and sitting on question 0 with the mic open. */
-const answering = (): PracticeState => run([{ type: 'start' }, { type: 'questions', questions: THREE }]);
+const answering = (): PracticeState =>
+  run([{ type: 'start' }, { type: 'questions', questions: THREE }]);
 
 describe('applyPractice', () => {
   it('moves to the first question once the set arrives', () => {
@@ -79,7 +80,10 @@ describe('applyPractice', () => {
   it('ignores interim results', () => {
     // Interims are rewritten several times a second; appending them would
     // duplicate every phrase.
-    const state = run([said('At Ac', false), said('At Acme', false), said('At Acme.')], answering());
+    const state = run(
+      [said('At Ac', false), said('At Acme', false), said('At Acme.')],
+      answering(),
+    );
 
     expect(state.spoken).toBe('At Acme.');
   });
@@ -90,7 +94,10 @@ describe('applyPractice', () => {
 
   it('ignores transcript once the answer is being graded', () => {
     // Whatever they say while waiting belongs to no question.
-    const state = run([said('my answer'), { type: 'submit' }, said('and another thing')], answering());
+    const state = run(
+      [said('my answer'), { type: 'submit' }, said('and another thing')],
+      answering(),
+    );
 
     expect(state.step).toBe('grading');
     expect(state.spoken).toBe('my answer');
@@ -145,7 +152,12 @@ describe('applyPractice', () => {
     let state = answering();
     for (let position = 0; position < THREE.length; position++) {
       state = run(
-        [said('an answer'), { type: 'submit' }, { type: 'graded', question: graded(position) }, { type: 'next' }],
+        [
+          said('an answer'),
+          { type: 'submit' },
+          { type: 'graded', question: graded(position) },
+          { type: 'next' },
+        ],
         state,
       );
     }

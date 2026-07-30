@@ -8,6 +8,7 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/dist/**',
       '**/out/**',
+      '**/release/**',
       '**/target/**',
       '**/.vite/**',
       'apps/server/**',

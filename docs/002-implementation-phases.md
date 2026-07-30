@@ -1,6 +1,6 @@
 # 002 — MVP Implementation Phases
 
-**Status:** approved — Phases 0–7 done (see each exit criterion for what is still a manual check), Phase 8 next
+**Status:** approved — all eight phases built (see each exit criterion for what is still a manual check; Phase 8's needs a clean VM and a Fly.io account)
 **Scope:** Windows-only MVP — working app, no billing
 **Backend:** Java 21 + Spring Boot 3.4 (Maven)
 **Total estimate:** ~12–16 days
@@ -441,7 +441,7 @@ Two things are worth recording because they are not obvious from the code:
 
 **Not covered: the save dialog.** `dialog.showSaveDialog` cannot be exercised in
 the node test environment, so `main/export.ts` has no test — the same gap
-`screenshot.ts` and `display-media.ts` already have. What *is* verified: the call
+`screenshot.ts` and `display-media.ts` already have. What _is_ verified: the call
 shape typechecks against Electron's own definitions, and the app builds and
 launches with the handler registered. What is **not**: that the dialog behaves at
 runtime. It is deliberately unparented — the overlay is `focusable: false`, and a
@@ -458,19 +458,88 @@ keyboard. **Open the History panel, pick a session, and press Export Markdown.**
 
 ### Tasks
 
-- [ ] `electron-builder` NSIS target: installer + portable variants
-- [ ] App icon, product metadata, version scheme
-- [ ] Backend: `mvnw spring-boot:build-image` (Buildpacks) or a multi-stage Dockerfile
-- [ ] Deploy the container (Fly.io / Railway / Render); WSS with a real certificate
-- [ ] Point the desktop build at the production backend URL via build-time env
-- [ ] First-run flow: sign in → grant mic permission → knowledge-base prompt
-- [ ] Crash and error reporting
-- [ ] Windows build check with an actionable message on unsupported versions
-- [ ] Smoke-test on a **clean** Windows VM with no dev tools installed
+- [x] `electron-builder` NSIS target: installer + portable variants
+- [x] App icon, product metadata, version scheme
+- [x] Backend: multi-stage Dockerfile (Buildpacks not used — see below)
+- [x] Deploy the container (Fly.io / Railway / Render); WSS with a real certificate — **`fly.toml` written and the image verified locally; the deploy itself needs your account**
+- [x] Point the desktop build at the production backend URL via build-time env
+- [x] First-run flow: sign in → grant mic permission → knowledge-base prompt
+- [x] Crash and error reporting
+- [x] Windows build check with an actionable message on unsupported versions
+- [ ] Smoke-test on a **clean** Windows VM with no dev tools installed — **needs a VM and a human**
+
+The deploy runbook — Fly commands, the exact secrets, the SmartScreen behaviour,
+and the VM checklist — is [`003-deployment.md`](003-deployment.md).
+
+**A multi-stage Dockerfile rather than Buildpacks.** `spring-boot:build-image`
+would have been fewer lines, but it needs a Docker daemon reachable from Maven
+during the build and produces a ~600 MB image whose contents we do not control.
+The Dockerfile is explicit, pins the JRE, and drops to a non-root user. It also
+uses the `maven` image instead of the committed `./mvnw` — the wrapper is a shell
+script, and a Windows checkout can carry CRLF endings that a Linux shell refuses
+to run.
+
+Three things worth recording:
+
+- **Versions now move together.** `0.MINOR.PATCH` with `MINOR` as the last
+  completed phase, so this is `0.8.0` in the root `package.json`,
+  `apps/desktop/package.json`, and `apps/server/pom.xml`.
+- **`productName` had to be set explicitly.** Electron derives `app.getName()` —
+  and therefore `userData` — from `productName`, falling back to `name`. Without
+  it the installed app kept its session and logs under
+  `%APPDATA%\@vaderai\desktop`, a directory named after the npm scope. It is
+  `%APPDATA%\VaderAI` now, which also means **a dev install signed in before this
+  change will look signed out**: its session is in the old directory.
+- **`@vaderai/protocol` is bundled into the preload rather than externalised.**
+  Left external it would have to resolve out of a pnpm symlink at runtime from
+  inside the asar, which is the classic way a packaged Electron app dies with
+  "Cannot find module" on a machine that has no workspace. With it inlined the
+  asar holds `out/` and a `package.json` and nothing else — verified, zero
+  `node_modules` entries.
 
 ### Exit criterion
 
 Install the `.exe` on a clean Windows VM, sign in, join a call, and get a working answer — with no developer tooling present on that machine.
+
+**Not met — this one genuinely needs a clean VM, and nothing here substitutes for
+it.** What _is_ verified, on this machine:
+
+- **The installer and the portable `.exe` build and are correct.**
+  `VaderAI-0.8.0-setup.exe` and `VaderAI-0.8.0-portable.exe`, 90 MB each. The
+  `.exe` carries ProductName `VaderAI`, version `0.8.0`, the copyright string,
+  and the generated icon. The asar contains exactly `out/**` plus `package.json`
+  — **zero** `node_modules` entries — and the preload has `PROTOCOL_VERSION`
+  inlined with `electron` as its only external import.
+- **The packaged app runs.** Launched from `win-unpacked`, it stayed up with its
+  five processes and a window titled VaderAI, and created
+  `%APPDATA%\VaderAI` with `Local Storage` and a `Crashpad/` directory — the
+  latter being proof the crash reporter is actually running, not just configured.
+- **The container is real.** Built from the Dockerfile, it runs as
+  `uid=10001(vaderai)`, answers `/actuator/health` with `{"status":"UP"}` and
+  HTTP 200, returns **401** on `/v1/sessions` without a token, and completes a
+  WebSocket upgrade on `/v1/session` with **101**. 403 MB. It also **fail-fasts
+  with no database** rather than starting half-alive, which is the behaviour you
+  want when `SUPABASE_DB_URL` is wrong.
+- **Both suites pass.** 169 TypeScript tests (32 new: the first-run resolver, the
+  error log, the URL derivation, the capture notice) and 126 Java tests against a
+  real Supabase Postgres.
+
+Not covered, and worth being plain about:
+
+- **The clean-VM run itself**, which is the whole criterion. Nothing above proves
+  the app behaves on a machine without the Visual C++ runtimes, without a
+  developer's audio devices, and with SmartScreen in the way.
+- **The deploy.** `fly.toml` has never been applied to a real Fly account, so the
+  secrets, the health check timing, and the Supabase connection from Fly's
+  network are all unproven.
+- **The reporter's wiring.** `ErrorLog` is tested directly against the filesystem
+  and `captureProtectionNotice` against its message, but the `uncaughtException`
+  and `render-process-gone` handlers that call them have no test — the same gap
+  `export.ts`, `screenshot.ts`, and `display-media.ts` already have. The Crashpad
+  directory appearing at runtime is the strongest evidence available without
+  deliberately crashing the app.
+- **Code signing.** Skipped by decision. Expect _"Windows protected your PC"_ on
+  the VM and take the **More info → Run anyway** path.
 
 ---
 

@@ -2,7 +2,7 @@
 
 A real-time AI copilot for interviews and study sessions. VaderAI runs as an always-on-top desktop overlay on Windows that listens to your call, watches your screen, and streams answers only you can see.
 
-**Status:** Phase 7 of 8. The overlay captures both audio channels, streams them to the backend, and renders a speaker-attributed transcript plus a streaming answer that fires on its own when the interviewer stops talking — grounded in a résumé, job description, and notes you supply. There is also a practice mode that runs a graded mock interview with no live call, and every session is kept for review and export afterwards. Provider keys (Deepgram, Anthropic) are needed to run it against the real services.
+**Status:** v0.8.0 — all eight phases built. The overlay captures both audio channels, streams them to the backend, and renders a speaker-attributed transcript plus a streaming answer that fires on its own when the interviewer stops talking — grounded in a résumé, job description, and notes you supply. There is also a practice mode that runs a graded mock interview with no live call, and every session is kept for review and export afterwards. It now packages to a Windows installer and the backend containerises for deployment. Provider keys (Deepgram, Anthropic) are needed to run it against the real services.
 
 ---
 
@@ -124,12 +124,12 @@ All the calls in one run share a single cached prefix, so the five grades are
 cache reads rather than five cold writes — subject to the same 512-token floor
 as above.
 
-| Method | Path | Purpose |
-| ------ | ---- | ------- |
-| `POST` | `/v1/practice/{sessionId}` | generate the question set (idempotent) |
-| `GET` | `/v1/practice/{sessionId}` | read it back |
-| `POST` | `/v1/practice/{sessionId}/{position}` | grade one spoken answer |
-| `GET` | `/v1/practice/{sessionId}/report` | scores, rewrites, weakest themes |
+| Method | Path                                  | Purpose                                |
+| ------ | ------------------------------------- | -------------------------------------- |
+| `POST` | `/v1/practice/{sessionId}`            | generate the question set (idempotent) |
+| `GET`  | `/v1/practice/{sessionId}`            | read it back                           |
+| `POST` | `/v1/practice/{sessionId}/{position}` | grade one spoken answer                |
+| `GET`  | `/v1/practice/{sessionId}/report`     | scores, rewrites, weakest themes       |
 
 Starting without a job description on file returns `409` and says so — there is
 nothing to write questions from.
@@ -154,15 +154,36 @@ costs nothing; only the closing report calls the model, and history does not.
 removes the session and, by database cascade, its transcript, its answers, and
 any grades — it asks first.
 
-| Method | Path | Purpose |
-| ------ | ---- | ------- |
-| `GET` | `/v1/sessions` | the list, newest first, with counts |
-| `GET` | `/v1/sessions/{id}` | one session with its turns and answers |
+| Method   | Path                | Purpose                                  |
+| -------- | ------------------- | ---------------------------------------- |
+| `GET`    | `/v1/sessions`      | the list, newest first, with counts      |
+| `GET`    | `/v1/sessions/{id}` | one session with its turns and answers   |
 | `DELETE` | `/v1/sessions/{id}` | delete, cascading to everything below it |
 
 Note the plural. `/v1/session` (singular) is the WebSocket endpoint and is public
 because it authenticates itself with its first frame; these are one character
 away from it and are not.
+
+### First run
+
+A new install is walked through the three things it needs, in order: **sign in →
+allow the microphone → add your background**. The mic step asks the OS directly
+(the Permissions API only reports; it never prompts) and says what to do if
+Windows has already refused. The background step is skippable — it is a quality
+lever, not a requirement — and once skipped it stays quiet. Sign-in is not
+skippable, because dismissing it would leave an app where nothing works and
+nothing explains why.
+
+### When something breaks
+
+Errors from both processes are written to `%APPDATA%\VaderAI\logs\vaderai.log`,
+rotated at 512 KB to a single `.log.1` sibling. Native crashes leave minidumps in
+`%APPDATA%\VaderAI\Crashpad\reports`, and a renderer crash raises a dialog naming
+the log path — the UI is gone at that point, so it cannot be shown in the overlay.
+
+**Nothing is uploaded.** A tool that sits on top of a job interview and listens to
+both sides of it is the last thing that should be posting stack traces, which
+routinely carry message text, to a third party.
 
 ### Security model
 
@@ -226,6 +247,13 @@ pnpm test:server      # mvnw test
 `pnpm supabase:start` runs only Postgres and Auth — the other services are
 excluded because nothing here uses them and their images are large.
 
+If it fails with `bind: An attempt was made to access a socket in a way forbidden
+by its access permissions`, Windows has reserved a port range covering Supabase's
+54321/54322 — Hyper-V grabs blocks of the dynamic range on boot. Check with
+`netsh interface ipv4 show excludedportrange protocol=tcp`. Restarting the
+`winnat` service as administrator releases them; the Java tests that need
+Postgres cannot run until they are free.
+
 The overlay is transparent and frameless, so on first launch look for it in the
 top-left of your primary display — `Ctrl+Shift+↓/→` moves it. The status pill
 turns amber if this machine cannot hide it from screen capture.
@@ -243,12 +271,39 @@ The capture always follows the system default and re-acquires when it changes.
 
 ---
 
+## Packaging and deployment
+
+```bash
+pnpm package:desktop   # NSIS installer + portable .exe -> apps/desktop/release/
+pnpm package:server    # backend container image
+```
+
+The desktop build is **unsigned**, so Windows SmartScreen warns on a machine that
+has not seen it before — **More info → Run anyway**. `VITE_*` values are baked in
+at build time, so an installer is permanently pointed at whatever backend was
+configured when it was built; put production values in a gitignored
+`.env.production` at the repo root.
+
+The backend ships as a multi-stage Dockerfile and deploys to Fly.io, where TLS is
+terminated at the edge — `wss://` on a real certificate with nothing to
+configure. Provider keys live in `fly secrets` and never touch the client.
+
+Full runbook, including the exact secrets and the clean-VM checklist:
+[`docs/003-deployment.md`](docs/003-deployment.md).
+
+**Versions:** `0.MINOR.PATCH`, `MINOR` being the last completed phase. The root
+`package.json`, `apps/desktop/package.json`, and `apps/server/pom.xml` are
+expected to agree.
+
+---
+
 ## Documentation
 
-| Path                                                                     | Contents                                                |
-| ------------------------------------------------------------------------ | ------------------------------------------------------- |
-| [`docs/001-implementation-plan.md`](docs/001-implementation-plan.md)     | Architecture, latency budget, cost model, risk register |
-| [`docs/002-implementation-phases.md`](docs/002-implementation-phases.md) | Phase-by-phase build checklist — **start here**         |
+| Path                                                                     | Contents                                                 |
+| ------------------------------------------------------------------------ | -------------------------------------------------------- |
+| [`docs/001-implementation-plan.md`](docs/001-implementation-plan.md)     | Architecture, latency budget, cost model, risk register  |
+| [`docs/002-implementation-phases.md`](docs/002-implementation-phases.md) | Phase-by-phase build checklist — **start here**          |
+| [`docs/003-deployment.md`](docs/003-deployment.md)                       | Building the installer, deploying the backend, releasing |
 
 ---
 

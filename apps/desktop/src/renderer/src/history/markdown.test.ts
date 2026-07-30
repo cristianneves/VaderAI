@@ -98,7 +98,11 @@ describe('toMarkdown for a live session', () => {
       detail({
         turns: [],
         answers: [
-          { content: 'First line.\nSecond line.', trigger: 'auto', createdAt: '2026-07-29T10:00:00Z' },
+          {
+            content: 'First line.\nSecond line.',
+            trigger: 'auto',
+            createdAt: '2026-07-29T10:00:00Z',
+          },
         ],
       }),
     );

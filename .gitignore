@@ -9,6 +9,11 @@ build/
 *.tsbuildinfo
 .vite/
 
+# ...except electron-builder's buildResources directory, which holds inputs (the
+# app icon), not output. Without this the installer builds with Electron's
+# default icon on any machine but the one that generated it.
+!apps/desktop/build/
+
 # Java / Maven
 target/
 *.class

@@ -9,8 +9,18 @@ import { SignIn } from './auth/SignIn';
 import { serverWsUrl, supabase } from './auth/supabase';
 import { HistoryPanel } from './history/HistoryPanel';
 import { SessionSocket, type ConnectionState } from './net/session';
+import {
+  dismiss,
+  isDismissed,
+  nextStep,
+  readMicPermission,
+  type MicPermission,
+} from './onboarding/first-run';
+import { FirstRun } from './onboarding/FirstRun';
 import { applyPractice, NO_PRACTICE, type PracticeState } from './practice/practice';
 import { PracticePanel } from './practice/PracticePanel';
+import { fetchKnowledge } from './settings/api';
+import type { KnowledgeView } from './settings/knowledge';
 import { Settings } from './settings/Settings';
 import { applyTranscript, speakerOf, type TranscriptLine } from './transcript/log';
 
@@ -36,6 +46,9 @@ export function App(): React.JSX.Element {
   const [view, setView] = useState<View>('live');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [practice, setPractice] = useState<PracticeState>(NO_PRACTICE);
+  const [micPermission, setMicPermission] = useState<MicPermission>('unknown');
+  const [knowledge, setKnowledge] = useState<KnowledgeView | null>(null);
+  const [skipped, setSkipped] = useState(() => isDismissed(localStorage));
 
   /** Clicking the open panel's button returns to the live view. */
   const toggle = (panel: View): void => setView((current) => (current === panel ? 'live' : panel));
@@ -92,7 +105,38 @@ export function App(): React.JSX.Element {
     [],
   );
 
+  const token = session?.access_token;
+
+  /**
+   * Left null on failure rather than falling back to an empty view: a backend
+   * that is down should not be reported to the user as "you have no résumé".
+   */
+  function reloadKnowledge(): void {
+    if (token === undefined) return;
+    void fetchKnowledge(token)
+      .then(setKnowledge)
+      .catch(() => undefined);
+  }
+
+  useEffect(() => {
+    if (token === undefined) return;
+    void readMicPermission().then(setMicPermission);
+    reloadKnowledge();
+  }, [token]);
+
   const listening = audioState === 'starting' || audioState === 'running';
+
+  const onboarding = nextStep({
+    signedIn: session !== null,
+    micPermission,
+    knowledge,
+    dismissed: skipped,
+  });
+
+  function skipOnboarding(): void {
+    dismiss(localStorage);
+    setSkipped(true);
+  }
 
   async function startListening(micOnly = false): Promise<void> {
     const token = session?.access_token;
@@ -178,7 +222,14 @@ export function App(): React.JSX.Element {
       </header>
 
       {view === 'settings' ? (
-        <Settings accessToken={session.access_token} onClose={() => setView('live')} />
+        <Settings
+          accessToken={session.access_token}
+          onClose={() => {
+            setView('live');
+            // Re-read so the first-run prompt clears the moment something is saved.
+            reloadKnowledge();
+          }}
+        />
       ) : view === 'practice' ? (
         <PracticePanel
           accessToken={session.access_token}
@@ -189,6 +240,14 @@ export function App(): React.JSX.Element {
         />
       ) : view === 'history' ? (
         <HistoryPanel accessToken={session.access_token} onClose={() => setView('live')} />
+      ) : onboarding !== null && onboarding !== 'signin' ? (
+        <FirstRun
+          step={onboarding}
+          micPermission={micPermission}
+          onMicPermission={setMicPermission}
+          onOpenBackground={() => setView('settings')}
+          onSkip={skipOnboarding}
+        />
       ) : (
         <>
           <section className="pane transcript">
