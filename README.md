@@ -18,10 +18,13 @@ screen capture (screenshots)  ──────→  Claude  →  answer streame
 - **Dual-channel audio capture** — system audio (the other person) and your mic are captured as separate channels, so speaker attribution is exact without a diarization model.
 - **Live transcript** with sub-second latency, attributed to _Interviewer_ or _You_.
 - **Streaming answers** triggered automatically when the other side finishes a question, or manually via hotkey.
-- **Screenshot Q&A** — capture a coding problem or a slide and ask about it.
+- **Ask bar** — type a question or a follow-up (`Ctrl+K`). The model sees the last three answers it gave, so _"explain that more simply"_ works.
+- **Screenshot Q&A** — capture a coding problem or a slide and ask about it. Screenshots switch to a coding prompt: approach, code, complexity, edge cases, rendered as copyable fenced blocks.
+- **Multi-language** — thirteen languages plus Deepgram's code-switching mode. Transcript and answers both follow the setting.
 - **Knowledge base** — your résumé, the job description, and personal notes ground every answer.
 - **Practice mode** — mock interviews with graded feedback, no live call required.
 - **Session history** — every session is kept: review the transcript with the answers in place, or export it to Markdown.
+- **Post-call recap** — a summary, key points and action items, generated once and stored so reopening it costs nothing.
 - **Excluded from screen sharing** — the overlay uses Windows' `WDA_EXCLUDEFROMCAPTURE`, enforced by the desktop compositor.
 
 **Target:** first visible token within ~1.3–1.6 s of the question ending.
@@ -205,9 +208,15 @@ every repository call takes the user id from the verified JWT, and
 | -------------------- | --------------------------------- |
 | `Ctrl+\``            | show / hide overlay               |
 | `Ctrl+Enter`         | ask now (manual trigger)          |
+| `Ctrl+K`             | open the ask bar and type         |
 | `Ctrl+H`             | screenshot + ask about the screen |
 | `Ctrl+Shift+↑/↓/←/→` | move overlay                      |
 | `Ctrl+Shift+C`       | clear answer panel                |
+
+`Ctrl+K` is the one hotkey that changes the window's behaviour: the overlay is
+`focusable: false` so it never steals focus from the meeting, which also means
+a text field receives no keystrokes. Focus is borrowed while the ask bar is
+open and handed back on submit or `Escape`.
 
 Hotkeys another app already owns are logged at startup rather than failing
 silently.
