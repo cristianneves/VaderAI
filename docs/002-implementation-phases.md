@@ -74,7 +74,8 @@ Overlay Shell  Audio Capture           Backend + STT
 - [x] `contracts/messages/*.json` — one fixture per WebSocket message type
 - [x] `.gitignore` covering Node, Electron, **Maven/Java**, and Windows
 - [x] `.env.example`, `.editorconfig`, `.nvmrc`
-- [x] GitHub config: CI workflow, PR template, issue templates, Dependabot
+- [x] GitHub config: CI workflow, issue templates, Dependabot (a PR template was
+      added here too, then dropped in Phase 7 — PR bodies are written freehand)
 
 ### Exit criterion
 
