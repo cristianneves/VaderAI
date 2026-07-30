@@ -2,6 +2,7 @@ package ai.vader.server.prompt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ai.vader.server.llm.AnswerMode;
 import ai.vader.server.llm.AnswerRequest;
 import ai.vader.server.preferences.Language;
 import ai.vader.server.stt.TranscriptEvent;
@@ -89,6 +90,58 @@ class PromptAssemblerTest {
 
         assertThat(request.image()).contains(image);
         assertThat(request.conversation()).contains("on the screen");
+    }
+
+    // --- coding mode --------------------------------------------------------
+
+    @Test
+    void aScreenshotSwitchesToTheCodingPrompt() {
+        var image = new AnswerRequest.ImageInput("image/png", "AAAA");
+
+        AnswerRequest request = assemble(TURNS, "", Optional.of(image), null, List.of());
+
+        assertThat(request.mode()).isEqualTo(AnswerMode.CODING);
+        assertThat(request.cachedBlocks().get(0)).startsWith(PromptAssembler.CODING_SYSTEM_PROMPT);
+    }
+
+    @Test
+    void everythingElseKeepsTheInterviewPrompt() {
+        AnswerRequest request = assemble(TURNS, "");
+
+        assertThat(request.mode()).isEqualTo(AnswerMode.INTERVIEW);
+        assertThat(request.cachedBlocks().get(0)).startsWith(PromptAssembler.SYSTEM_PROMPT);
+    }
+
+    @Test
+    void theCodingPromptAsksForFencedCodeComplexityAndEdgeCases() {
+        // The whole point of the split — the interview prompt asks for a few
+        // sentences said out loud, which is the wrong shape for a problem.
+        assertThat(PromptAssembler.CODING_SYSTEM_PROMPT)
+                .contains("fenced Markdown block")
+                .contains("time and space complexity")
+                .contains("edge cases");
+    }
+
+    @Test
+    void theTwoModesDoNotShareACachedPrefix() {
+        // They must not: a cache hit across them would answer a spoken question
+        // with a code block, or a screenshot with three sentences.
+        var image = new AnswerRequest.ImageInput("image/png", "AAAA");
+
+        var coding = assemble(TURNS, "bg", Optional.of(image), null, List.of());
+        var interview = assemble(TURNS, "bg", Optional.empty(), null, List.of());
+
+        assertThat(coding.cachedBlocks()).isNotEqualTo(interview.cachedBlocks());
+    }
+
+    @Test
+    void theKnowledgeBaseStillGroundsACodingAnswer() {
+        var image = new AnswerRequest.ImageInput("image/png", "AAAA");
+
+        var request = assemble(TURNS, "Ten years of Python.", Optional.of(image), null, List.of());
+
+        assertThat(request.cachedBlocks()).hasSize(2);
+        assertThat(request.cachedBlocks().get(1)).contains("Ten years of Python.");
     }
 
     @Test

@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import { useEffect, useRef, useState } from 'react';
 import type { CaptureProtection } from '../../shared/overlay';
 import { applyAnswer, NO_ANSWER, type AnswerState } from './answer/answer';
+import { AnswerText } from './answer/AnswerText';
 import { AskBar } from './answer/AskBar';
 import { AudioCapture, type CaptureState } from './audio/capture';
 import { encodeWav, FrameBuffer } from './audio/pcm';
@@ -296,7 +297,14 @@ export function App(): React.JSX.Element {
           </section>
 
           <section className="pane answer" ref={answerPane.ref} onScroll={answerPane.onScroll}>
-            <h2>Answer{answer.streaming && <span className="cursor"> ▍</span>}</h2>
+            <h2>
+              Answer{answer.streaming && <span className="cursor"> ▍</span>}
+              {answer.text !== '' && (
+                <button className="chip copy-answer" onClick={() => window.vader.copyText(answer.text)}>
+                  Copy
+                </button>
+              )}
+            </h2>
             {answer.text === '' ? (
               <p className="empty">
                 {answer.streaming
@@ -304,7 +312,7 @@ export function App(): React.JSX.Element {
                   : 'Ctrl+Enter to ask · Ctrl+K to type · Ctrl+H to ask about the screen'}
               </p>
             ) : (
-              <p className="answer-text">{answer.text}</p>
+              <AnswerText text={answer.text} />
             )}
           </section>
 

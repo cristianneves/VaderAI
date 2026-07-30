@@ -164,7 +164,7 @@ public class AnthropicAnswerEngine implements AnswerEngine {
 
         var params = MessageCreateParams.builder()
                 .model(properties.model())
-                .maxTokens(properties.maxTokens())
+                .maxTokens(properties.maxTokensFor(request.mode()))
                 .systemOfTextBlockParams(system)
                 .outputConfig(OutputConfig.builder()
                         .effort(OutputConfig.Effort.LOW)
@@ -203,7 +203,7 @@ public class AnthropicAnswerEngine implements AnswerEngine {
 
         var params = com.anthropic.models.beta.messages.MessageCreateParams.builder()
                 .model(properties.model())
-                .maxTokens(properties.maxTokens())
+                .maxTokens(properties.maxTokensFor(request.mode()))
                 .addBeta(AnthropicBeta.FAST_MODE_2026_02_01)
                 .speed(com.anthropic.models.beta.messages.MessageCreateParams.Speed.FAST)
                 .systemOfBetaTextBlockParams(system)

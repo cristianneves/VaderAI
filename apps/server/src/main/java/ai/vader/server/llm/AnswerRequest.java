@@ -15,9 +15,14 @@ import java.util.Optional;
  *     them in the prefix would throw the cache away on every ask.
  * @param conversation volatile turn context, placed after the breakpoint
  * @param image optional screenshot, placed <em>before</em> the text block
+ * @param mode which kind of answer this is; sets the output ceiling
  */
 public record AnswerRequest(
-        List<String> cachedBlocks, List<Exchange> priorExchanges, String conversation, Optional<ImageInput> image) {
+        List<String> cachedBlocks,
+        List<Exchange> priorExchanges,
+        String conversation,
+        Optional<ImageInput> image,
+        AnswerMode mode) {
 
     /**
      * One completed question/answer pair.

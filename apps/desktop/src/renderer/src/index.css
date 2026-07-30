@@ -365,3 +365,71 @@ button.link {
   font: inherit;
   font-size: 12px;
 }
+
+/* --- markdown answers (Phase 9c) ------------------------------------------ */
+
+.answer-text > :first-child {
+  margin-top: 0;
+}
+
+.answer-text > :last-child {
+  margin-bottom: 0;
+}
+
+.answer-text p,
+.answer-text ul,
+.answer-text ol {
+  margin: 0 0 7px;
+}
+
+.answer-text ul,
+.answer-text ol {
+  padding-left: 18px;
+}
+
+.answer-text li {
+  margin-bottom: 2px;
+}
+
+.inline-code {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #26263a;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 11.5px;
+}
+
+.code-block {
+  margin: 6px 0;
+  border: 1px solid #3a3a4c;
+  border-radius: 6px;
+  background: #0e0e16;
+  overflow: hidden;
+}
+
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 6px;
+  border-bottom: 1px solid #2c2c3a;
+  background: #16161f;
+}
+
+.code-block pre {
+  margin: 0;
+  padding: 7px 8px;
+  overflow-x: auto;
+}
+
+.code-block code {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.copy-answer {
+  margin-left: 8px;
+  vertical-align: middle;
+}

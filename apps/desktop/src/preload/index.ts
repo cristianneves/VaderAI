@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import { clipboard, contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { PROTOCOL_VERSION } from '@vaderai/protocol';
 import type { CaptureProtection, OverlayAction, ScreenshotCapture } from '../shared/overlay';
 
@@ -30,6 +30,12 @@ const api = {
    * means a text field gets no keystrokes until this is turned on.
    */
   setComposing: (composing: boolean): void => ipcRenderer.send('overlay:composing', composing),
+  /**
+   * Electron's clipboard rather than `navigator.clipboard`, which needs a
+   * secure context — the packaged app loads over `file://`, so the web API is
+   * exactly the kind of thing that works in dev and fails once installed.
+   */
+  copyText: (text: string): void => clipboard.writeText(text),
   /** Subscribes to hotkey actions main forwards. Returns an unsubscribe fn. */
   onOverlayAction: (handler: (action: OverlayAction) => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, action: OverlayAction): void => handler(action);

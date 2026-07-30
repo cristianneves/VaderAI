@@ -78,8 +78,13 @@ class AnthropicAnswerEngineTest {
 
     private static AnswerRequest request(
             Optional<AnswerRequest.ImageInput> image, List<AnswerRequest.Exchange> priorExchanges) {
+        return request(image, priorExchanges, AnswerMode.INTERVIEW);
+    }
+
+    private static AnswerRequest request(
+            Optional<AnswerRequest.ImageInput> image, List<AnswerRequest.Exchange> priorExchanges, AnswerMode mode) {
         return new AnswerRequest(
-                List.of("system prompt", "knowledge base"), priorExchanges, "Interviewer: hello", image);
+                List.of("system prompt", "knowledge base"), priorExchanges, "Interviewer: hello", image, mode);
     }
 
     @BeforeEach
@@ -87,7 +92,7 @@ class AnthropicAnswerEngineTest {
         server = new MockWebServer();
         server.start();
         engine = new AnthropicAnswerEngine(new AnthropicProperties(
-                "test-key", "claude-opus-5", 1024, false, server.url("/").toString()));
+                "test-key", "claude-opus-5", 1024, 2048, false, server.url("/").toString()));
     }
 
     @AfterEach
@@ -249,5 +254,17 @@ class AnthropicAnswerEngineTest {
         var body = new ObjectMapper().readTree(recorded.getBody().readUtf8());
         assertThat(body.get("model").asText()).isEqualTo("claude-opus-5");
         assertThat(body.get("max_tokens").asLong()).isEqualTo(1024);
+    }
+
+    @Test
+    void aCodingAnswerGetsTheHigherCeiling() throws Exception {
+        // 1024 is sized for three sentences read aloud; it truncates a function.
+        enqueueStream();
+
+        engine.stream(request(Optional.empty(), List.of(), AnswerMode.CODING), listener);
+        await().atMost(Duration.ofSeconds(10)).until(() -> usage.get() != null);
+
+        var body = new ObjectMapper().readTree(server.takeRequest().getBody().readUtf8());
+        assertThat(body.get("max_tokens").asLong()).isEqualTo(2048);
     }
 }

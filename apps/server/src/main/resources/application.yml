@@ -41,6 +41,10 @@ vaderai:
     api-key: ${ANTHROPIC_API_KEY:}
     model: ${ANTHROPIC_MODEL:claude-opus-5}
     max-tokens: 1024
+    # A spoken answer is capped tight because someone reads it aloud mid
+    # sentence. A screenshot answer carries code plus complexity, and 1024
+    # truncates a function halfway through.
+    coding-max-tokens: 2048
     # Research preview: same model, faster output, premium pricing, Claude API
     # only. Off by default — it also takes a different (beta) request path.
     fast-mode: ${ANTHROPIC_FAST_MODE:false}

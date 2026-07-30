@@ -1,5 +1,6 @@
 package ai.vader.server.prompt;
 
+import ai.vader.server.llm.AnswerMode;
 import ai.vader.server.llm.AnswerRequest;
 import ai.vader.server.preferences.Language;
 import ai.vader.server.stt.TranscriptEvent;
@@ -49,6 +50,40 @@ public class PromptAssembler {
             """;
 
     /**
+     * Used when there is a problem on the screen rather than a question in the
+     * air. Deliberately not the interview prompt with a sentence bolted on: the
+     * interview prompt's whole frame — first person, in their voice, a few
+     * sentences someone can say out loud — is wrong for a LeetCode problem, and
+     * an answer that opens by narrating an approach in the first person is
+     * exactly the thing that wastes the seconds it was meant to save.
+     */
+    static final String CODING_SYSTEM_PROMPT =
+            """
+            You are helping someone through a technical interview problem, live. \
+            Your answer is shown on a private overlay only they can see, while \
+            they are being watched.
+
+            Lead with the approach in one or two sentences, so they have \
+            something to say immediately. Then give the code. Then state the time \
+            and space complexity, and name the edge cases that matter — empty \
+            input, a single element, duplicates, overflow, whatever this problem \
+            actually turns on.
+
+            Write the code as a fenced Markdown block with a language tag. Use \
+            the language on the screen if you can see one, and Python if you \
+            cannot. It has to be code they could type out and defend, not \
+            pseudocode.
+
+            Prefer the solution a competent candidate reaches under time \
+            pressure. If there is a substantially better approach, give the \
+            working one first and name the better one in a sentence — a clever \
+            answer they cannot explain is worse than a plain one they can.
+
+            If the problem statement is cut off or unreadable, solve the most \
+            likely reading and say in one line what you assumed.\
+            """;
+
+    /**
      * How the answer language is stated. Part of the cached prefix, which is
      * correct: it is constant for a session, so it costs one cold write and then
      * caches — and two users in different languages get different prefixes,
@@ -78,8 +113,13 @@ public class PromptAssembler {
             String question,
             List<AnswerRequest.Exchange> priorExchanges,
             Language language) {
+        // A screenshot means there is a problem on the screen, which is the one
+        // case where the interview prompt is the wrong shape entirely.
+        AnswerMode mode = image.isPresent() ? AnswerMode.CODING : AnswerMode.INTERVIEW;
+        String systemPrompt = mode == AnswerMode.CODING ? CODING_SYSTEM_PROMPT : SYSTEM_PROMPT;
+
         List<String> cached = new ArrayList<>();
-        cached.add(SYSTEM_PROMPT + languageInstruction(language));
+        cached.add(systemPrompt + languageInstruction(language));
         if (knowledgeBase != null && !knowledgeBase.isBlank()) {
             cached.add("Background on the person you are helping:\n\n" + knowledgeBase.strip());
         }
@@ -88,7 +128,8 @@ public class PromptAssembler {
                 List.copyOf(cached),
                 List.copyOf(priorExchanges),
                 conversation(recentTurns, image.isPresent(), question),
-                image);
+                image,
+                mode);
     }
 
     private String conversation(List<TranscriptEvent> turns, boolean hasImage, String question) {

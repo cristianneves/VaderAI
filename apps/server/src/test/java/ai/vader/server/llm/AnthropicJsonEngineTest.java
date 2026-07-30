@@ -51,7 +51,7 @@ class AnthropicJsonEngineTest {
         server = new MockWebServer();
         server.start();
         engine = new AnthropicJsonEngine(
-                new AnthropicProperties("test-key", "claude-opus-5", 1024, false, server.url("/").toString()));
+                new AnthropicProperties("test-key", "claude-opus-5", 1024, 2048, false, server.url("/").toString()));
     }
 
     @AfterEach
