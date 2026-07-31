@@ -1,6 +1,6 @@
 # 002 — MVP Implementation Phases
 
-**Status:** approved — all nine phases built (see each exit criterion for what is still a manual check; Phase 8's needs a clean VM and a Fly.io account)
+**Status:** approved — all ten phases built (see each exit criterion for what is still a manual check; Phase 8's needs a clean VM and a Fly.io account)
 **Scope:** Windows-only MVP — working app, no billing
 **Backend:** Java 21 + Spring Boot 3.4 (Maven)
 **Total estimate:** ~12–16 days
@@ -714,6 +714,106 @@ correct.
 
 ---
 
+## Phase 10 — Hardening
+
+**Goal:** finish the features that were already built. Nothing new ships here.
+**Estimate:** 1 day · **Risk:** low · **Depends on:** all
+
+No feature gap drove this one — three specific pieces of unfinished work did.
+Version moves to `0.10.0`.
+
+### 10a — The live session survives a dropped connection
+
+- [x] The client sends the `ping` the protocol defined in Phase 3 and the server
+      has answered since Phase 3. It was **never sent**: the schema, the Java
+      handler and `SessionWebSocketHandlerTest::pingIsAnsweredWithPong` all
+      existed around a client that had no heartbeat
+- [x] Reconnect is unbounded with a 30s ceiling and ±20% jitter, replacing the
+      give-up after five attempts (~15s)
+- [x] `socket.onerror` no longer reports `'error'`. `onClose` is the one place
+      that decides the next state; reporting from both made a retry that was
+      still pending look terminal
+- [x] `'error'` is now reserved for protocol drift — the one failure reconnecting
+      cannot fix
+- [x] Dropped audio frames are counted and shown, instead of a silent gap
+
+A half-open socket — slept laptop, Wi-Fi handoff, VPN drop — is invisible to
+`onclose`; the OS holds it open for minutes. 15s between pings and a 10s pong
+deadline catches it in ~25s. The timeout closes the socket by hand and lets the
+existing `onClose` path do the reconnecting, rather than opening a second one.
+
+The reconnect notice is deliberately **not** dismissible: it is the live state of
+the session, and hiding it would hide that nothing is being transcribed.
+
+**Exit criterion:** kill the server mid-session; the overlay counts up
+`reconnecting… (attempt N)` and never says it gave up. Start the server again and
+the session returns to `ready` on its own, without touching Stop/Start.
+
+**Met.** 11 new tests in `net/session.test.ts` (27 total), including regression
+guards that `'error'` is never reported while a retry is pending and that a
+`pong` is absorbed by the socket rather than reaching the UI. The two-machine
+manual check is still worth doing before a release.
+
+### 10b — Server failures and misconfiguration are legible
+
+- [x] `ApiExceptionHandler`, a global `@RestControllerAdvice` returning RFC 9457
+      `problem+json`. Extending `ResponseEntityExceptionHandler` also fixes the
+      multipart limit surfacing as a bare 500
+- [x] A `ResponseStatusException` handler in front of the catch-all — without it
+      the catch-all matches it too and turns every deliberate 404 into a 500
+- [x] The catch-all never echoes the exception message; it is logged instead
+- [x] The five per-controller handlers return `ProblemDetail` for consistency
+- [x] One `net/http.ts` helper replaces four copies of the same authed fetch and
+      reads `detail`, so the overlay shows a sentence and not a JSON blob
+- [x] `ProviderHealthIndicator`: a missing provider key reports DOWN on
+      `/actuator/health` and warns at startup, instead of arriving as a vendor
+      401 an hour later
+- [x] `AnthropicAnswerEngine` fails with "the model is not configured on this
+      server" rather than sending the literal key `"unset"`
+- [x] Multipart limit raised to 10MB — Boot's 1MB default is smaller than an
+      ordinary PDF résumé, so the Phase 5 upload failed on real files
+- [x] `logging.level.ai.vader.server` defaults to `INFO`, `LOG_LEVEL` to override
+
+`@Validated`/`@NotBlank` on the properties was considered and rejected: tests and
+local development boot without keys on purpose, and `AnthropicTokenCounter`'s
+estimate fallback exists for exactly that case. Health is the right signal —
+`fly.toml` already probes it, so a deploy with missing secrets now fails there.
+
+**Exit criterion:** an unhandled failure returns `problem+json` without repeating
+what the exception said; a deliberate 404 stays a 404; `/actuator/health` is DOWN
+with no `ANTHROPIC_API_KEY`.
+
+**Met.** `ApiExceptionHandlerTest` asserts both over real HTTP;
+`ProviderHealthIndicatorTest` covers both keys, each missing alone, both missing,
+and a whitespace-only key.
+
+### Cross-cutting
+
+- [x] `README.md` and this file updated; version `0.10.0` in both `package.json`s
+      and `pom.xml`
+- [x] `.env.example` documents `LOG_LEVEL` and that the provider keys are
+      required in a deployed environment
+
+### Verification
+
+**189 Java tests and 222 TypeScript tests, all green.** `pnpm typecheck` and
+`pnpm lint` clean.
+
+Two things worth recording:
+
+- **`format:check` was already failing on `main`** across six files that predate
+  this phase, so CI was red before any of this. Fixed here in its own commit
+  rather than mixed into the changes above.
+- **`MaxUploadSizeExceededException` did not need a handler.**
+  `ResponseEntityExceptionHandler` already maps it; adding one broke context
+  startup with an ambiguous-mapping error. Extending the base class was the whole
+  fix — the 500 was only ever there because no advice existed.
+
+Still needing a real key, unchanged: nothing in this phase touches prompt or
+answer quality.
+
+---
+
 ## Summary
 
 | Phase | Deliverable                         | Language | Est.         | Risk        |
@@ -728,7 +828,8 @@ correct.
 | 7     | History and review                  | both     | 1 d          | Low         |
 | 8     | Installer + deployed backend        | both     | 1–2 d        | Medium      |
 | 9     | Ask bar · language · coding · notes | both     | 2–3 d        | Low         |
-|       | **Total**                           |          | **~14–19 d** |             |
+| 10    | Hardening (reconnect · server ops)  | both     | 1 d          | Low         |
+|       | **Total**                           |          | **~15–20 d** |             |
 
 **Minimum demoable product:** Phases 0–4. Phases 5–8 make it a product someone else can use.
 
