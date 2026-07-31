@@ -13,6 +13,10 @@ import ai.vader.server.llm.AnswerEngine;
 import ai.vader.server.llm.AnswerMode;
 import ai.vader.server.limit.ModelCallLimiter;
 import ai.vader.server.llm.AnswerRequest;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
 import ai.vader.server.persistence.Answer;
 import ai.vader.server.persistence.AnswerTrigger;
 import ai.vader.server.persistence.SessionKind;
@@ -28,6 +32,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,6 +81,32 @@ class SessionWebSocketHandlerTest {
     private ModelCallLimiter limits;
 
     private final List<ByteBuffer> audioSentToStt = new CopyOnWriteArrayList<>();
+
+    /**
+     * The ttftMs measurement in Phase 12d only exists as a log line, so the log
+     * is what there is to assert against. Attached and detached per test so one
+     * test's answers cannot be read as another's.
+     */
+    private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
+
+    private List<String> logged(String containing) {
+        return logs.list.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .filter(message -> message.contains(containing))
+                .toList();
+    }
+
+    @BeforeEach
+    void captureLogs() {
+        logs.start();
+        ((Logger) LoggerFactory.getLogger(LiveSession.class)).addAppender(logs);
+    }
+
+    @AfterEach
+    void releaseLogs() {
+        ((Logger) LoggerFactory.getLogger(LiveSession.class)).detachAppender(logs);
+        logs.stop();
+    }
 
     /** Replays two deltas and finishes, as a successful answer would. */
     private void stubACompletedAnswer() {
@@ -372,6 +403,60 @@ class SessionWebSocketHandlerTest {
                 .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"code\":\"rate_limited\"")));
 
         assertThat(cancelled).isFalse();
+    }
+
+    /**
+     * Phase 12d. The latency claim in docs/001 was never measured, which is why
+     * the fast-mode and auto-ask defaults were still open questions.
+     */
+    @Test
+    void aCompletedAnswerLogsItsTimeToFirstToken() throws Exception {
+        stubACompletedAnswer();
+        var client = authenticated();
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"type\":\"answer_end\"")));
+        await().atMost(Duration.ofSeconds(5)).until(() -> !logged("ttftMs=").isEmpty());
+        String line = logged("ttftMs=").get(0);
+        // On the same line as the usage, or the two cannot be correlated per answer.
+        assertThat(line).contains("tokens in=").contains("mode=INTERVIEW");
+        var found = java.util.regex.Pattern.compile("ttftMs=(-?\\d+)").matcher(line);
+        assertThat(found.find()).isTrue();
+        assertThat(Long.parseLong(found.group(1))).isNotNegative();
+    }
+
+    @Test
+    void anAnswerThatFailsBeforeAnyTokenLogsNoTimeToFirstToken() throws Exception {
+        given(answerEngine.stream(any(), any())).willAnswer(invocation -> {
+            AnswerEngine.Listener listener = invocation.getArgument(1);
+            listener.onError(new IllegalStateException("provider is down"));
+            return (AnswerEngine.AnswerStream) () -> {};
+        });
+        var client = authenticated();
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"code\":\"llm_failed\"")));
+        // Neither onDelta nor onComplete ran, so there is nothing to time.
+        assertThat(logged("ttftMs=")).isEmpty();
+    }
+
+    @Test
+    void anAnswerWithNoDeltasReportsTheSentinelRatherThanAFabricatedZero() throws Exception {
+        given(answerEngine.stream(any(), any())).willAnswer(invocation -> {
+            AnswerEngine.Listener listener = invocation.getArgument(1);
+            listener.onComplete(new AnswerEngine.AnswerUsage(10, 0, 0, 0));
+            return (AnswerEngine.AnswerStream) () -> {};
+        });
+        var client = authenticated();
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+
+        await().atMost(Duration.ofSeconds(5)).until(() -> !logged("ttftMs=").isEmpty());
+        assertThat(logged("ttftMs=").get(0)).contains("ttftMs=-1");
     }
 
     @Test

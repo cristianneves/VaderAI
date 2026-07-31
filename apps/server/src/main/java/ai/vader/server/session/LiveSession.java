@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +48,12 @@ final class LiveSession {
      * work without the request growing all session.
      */
     static final int MEMORY_EXCHANGES = 3;
+    /**
+     * Logged when an answer completed without producing a single delta. A
+     * sentinel rather than a zero, so an empty answer cannot drag the median
+     * of a metric that exists to be read in aggregate.
+     */
+    private static final long NO_FIRST_TOKEN = -1;
 
     private final WebSocketSession socket;
     private final ObjectMapper json;
@@ -112,6 +119,10 @@ final class LiveSession {
         cancelInFlight();
 
         UUID answerId = UUID.randomUUID();
+        // Started before assembly, which is on the critical path and belongs
+        // inside the number.
+        long askedAtNanos = System.nanoTime();
+        var firstTokenMs = new AtomicLong(NO_FIRST_TOKEN);
         String asked = describeAsk(question, image.isPresent());
         var request =
                 prompts.assemble(recent.snapshot(), knowledgeBase, image, question, memorySnapshot(), language, mode);
@@ -123,6 +134,7 @@ final class LiveSession {
         inFlight.set(answers.stream(request, new AnswerEngine.Listener() {
             @Override
             public void onDelta(String text) {
+                firstTokenMs.compareAndSet(NO_FIRST_TOKEN, (System.nanoTime() - askedAtNanos) / 1_000_000);
                 // Append before sending: a send can fail on a slow client, and
                 // the stored answer should be what the model produced rather
                 // than what survived the socket.
@@ -135,9 +147,17 @@ final class LiveSession {
                 recordAnswer(spoken.toString(), trigger);
                 remember(asked, spoken.toString());
                 send(new ServerMessage.AnswerEnd(answerId));
+                // ttftMs is this server's ask-to-first-delta, not the number the
+                // product is sold on: end of question to first visible token also
+                // contains TurnDetector.SILENCE_MS on the auto path and one hop
+                // to the overlay. Read it as a floor. mode is here because a
+                // screenshot carries ~1200 extra uncached input tokens, which
+                // makes the figure meaningless without it.
                 log.info(
-                        "answer {} tokens in={} out={} cacheRead={} cacheWrite={}",
+                        "answer {} mode={} ttftMs={} tokens in={} out={} cacheRead={} cacheWrite={}",
                         answerId,
+                        request.mode(),
+                        firstTokenMs.get(),
                         usage.inputTokens(),
                         usage.outputTokens(),
                         usage.cacheReadInputTokens(),
