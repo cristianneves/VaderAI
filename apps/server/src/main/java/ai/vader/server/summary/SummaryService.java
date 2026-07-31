@@ -10,8 +10,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -26,22 +24,19 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class SummaryService {
 
-    private final SessionSummaryRepository summaries;
-    private final JdbcAggregateTemplate template;
+    private final SessionSummaryStore summaries;
     private final TranscriptService transcripts;
     private final PreferencesService preferences;
     private final JsonEngine llm;
     private final ObjectMapper json;
 
     SummaryService(
-            SessionSummaryRepository summaries,
-            JdbcAggregateTemplate template,
+            SessionSummaryStore summaries,
             TranscriptService transcripts,
             PreferencesService preferences,
             JsonEngine llm,
             ObjectMapper json) {
         this.summaries = summaries;
-        this.template = template;
         this.transcripts = transcripts;
         this.preferences = preferences;
         this.llm = llm;
@@ -63,8 +58,8 @@ public class SummaryService {
      * @throws ResponseStatusException 404 if the session is not this user's
      */
     public Recap recapOf(UUID sessionId, UUID userId) {
-        var stored = summaries.findBySessionIdAndUserId(sessionId, userId);
-        if (stored.isPresent()) return view(stored.get());
+        var stored = summaries.find(sessionId, userId);
+        if (stored.isPresent()) return stored.get();
 
         transcripts
                 .session(sessionId, userId)
@@ -75,7 +70,11 @@ public class SummaryService {
         if (conversation.isBlank()) throw new EmptySessionException();
 
         SummaryPrompts.Recap generated = generate(conversation, userId);
-        return view(store(sessionId, userId, generated));
+        var recap = new Recap(generated.summary(), generated.keyPoints(), generated.actionItems());
+        summaries.insert(sessionId, userId, recap);
+        // Read back rather than return what we just built: on a race the row
+        // that landed is the other client's, and both should see the same text.
+        return summaries.find(sessionId, userId).orElse(recap);
     }
 
     private SummaryPrompts.Recap generate(String conversation, UUID userId) {
@@ -90,30 +89,6 @@ public class SummaryService {
             // truncated or the shape drifted — not the user's fault either way.
             throw new IllegalStateException("could not read the recap the model returned", malformed);
         }
-    }
-
-    /**
-     * Insert rather than save: the id is the session id and is therefore never
-     * null, so {@code save} would issue an UPDATE against a row that does not
-     * exist yet. Two clients opening the panel at once both generate, and the
-     * primary key decides which write lands — the loser reads the winner's.
-     */
-    private SessionSummary store(UUID sessionId, UUID userId, SummaryPrompts.Recap recap) {
-        var row = SessionSummary.of(
-                sessionId,
-                userId,
-                recap.summary(),
-                recap.keyPoints().toArray(String[]::new),
-                recap.actionItems().toArray(String[]::new));
-        try {
-            return template.insert(row);
-        } catch (DuplicateKeyException raced) {
-            return summaries.findBySessionIdAndUserId(sessionId, userId).orElseThrow();
-        }
-    }
-
-    private static Recap view(SessionSummary row) {
-        return new Recap(row.summary(), List.of(row.keyPoints()), List.of(row.actionItems()));
     }
 
     /**

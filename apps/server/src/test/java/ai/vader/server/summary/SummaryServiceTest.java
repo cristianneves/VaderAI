@@ -85,6 +85,22 @@ class SummaryServiceTest {
     }
 
     @Test
+    void parsesTheShapeTheModelIsConstrainedToReturn() throws Exception {
+        var parsed = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readValue(
+                        """
+                        {"summary":"You walked through the payments rewrite.",
+                         "keyPoints":["They run Postgres on RDS","Hiring at staff level"],
+                         "actionItems":["Send the architecture doc"]}
+                        """,
+                        SummaryPrompts.Recap.class);
+
+        assertThat(parsed.summary()).isEqualTo("You walked through the payments rewrite.");
+        assertThat(parsed.keyPoints()).containsExactly("They run Postgres on RDS", "Hiring at staff level");
+        assertThat(parsed.actionItems()).containsExactly("Send the architecture doc");
+    }
+
+    @Test
     void theSchemaRequiresEveryFieldAndClosesItself() {
         // Structured outputs quietly omit fields that are not required, and
         // reject an object schema without additionalProperties: false.
