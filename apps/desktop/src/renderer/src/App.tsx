@@ -10,6 +10,7 @@ import { encodeWav, FrameBuffer } from './audio/pcm';
 import { SignIn } from './auth/SignIn';
 import { serverWsUrl, supabase } from './auth/supabase';
 import { HistoryPanel } from './history/HistoryPanel';
+import { severityOf, type Severity } from './net/problem';
 import { SessionSocket, type ConnectionState } from './net/session';
 import {
   dismiss,
@@ -56,7 +57,7 @@ export function App(): React.JSX.Element {
   const [skipped, setSkipped] = useState(() => isDismissed(localStorage));
   const [composing, setComposing] = useState(false);
   /** Last server-reported failure. Cleared when a session comes back up. */
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblem] = useState<{ text: string; severity: Severity } | null>(null);
   /** Carries "reconnecting… (attempt 3)" — the bare state word does not. */
   const [connectionDetail, setConnectionDetail] = useState<string | null>(null);
 
@@ -160,9 +161,14 @@ export function App(): React.JSX.Element {
   }
 
   async function startListening(micOnly = false): Promise<void> {
-    const token = session?.access_token;
-    if (token !== undefined) {
+    if (supabase !== null) {
+      // Bound here because the narrowing above does not reach into the callback.
+      const auth = supabase.auth;
       socket.current ??= new SessionSocket(serverWsUrl, {
+        // Asked for on every handshake rather than read from `session` here:
+        // that value is a snapshot of this render, and a reconnect an hour
+        // later needs whatever the refresh has produced since.
+        token: async () => (await auth.getSession()).data.session?.access_token ?? null,
         onMessage: (message) => {
           switch (message.type) {
             case 'ready':
@@ -173,8 +179,9 @@ export function App(): React.JSX.Element {
               break;
             case 'error':
               // Until Phase 9 these were dropped on the floor: a failed
-              // transcription or answer just looked like silence.
-              setProblem(message.message);
+              // transcription or answer just looked like silence. The code
+              // decides how it is shown — see net/problem.ts.
+              setProblem({ text: message.message, severity: severityOf(message.code) });
               break;
             case 'transcript':
               setLines((current) => applyTranscript(current, message));
@@ -197,12 +204,18 @@ export function App(): React.JSX.Element {
         onState: (state, detail) => {
           setConnection(state);
           setConnectionDetail(detail ?? null);
-          // 'error' is now terminal only — protocol drift, which reconnecting
-          // cannot fix. A dropped connection reports 'reconnecting' instead.
-          if (state === 'error' && detail !== undefined) setProblem(detail);
+          // 'error' is terminal — protocol drift or a dead credential, neither
+          // of which reconnecting fixes. A dropped connection says
+          // 'reconnecting' instead. An unauthorized close has already set a
+          // fatal problem from its error frame; do not overwrite it.
+          if (state === 'error' && detail !== undefined) {
+            setProblem((current) =>
+              current?.severity === 'fatal' ? current : { text: detail, severity: 'bug' },
+            );
+          }
         },
       });
-      socket.current.connect(token);
+      socket.current.connect();
     }
     await audio.current?.start({ micOnly });
   }
@@ -353,11 +366,25 @@ export function App(): React.JSX.Element {
         </p>
       )}
 
-      {problem !== null && (
-        <p className="problem" onClick={() => setProblem(null)} title="Dismiss">
-          {problem}
-        </p>
-      )}
+      {problem !== null &&
+        (problem.severity === 'fatal' ? (
+          // No dismiss: hiding it would leave the overlay looking idle when the
+          // session is actually over, with no hint at the one thing that fixes it.
+          <p className="problem fatal">
+            <span>{problem.text}</span>
+            <button className="chip" onClick={() => void supabase?.auth.signOut()}>
+              Sign in again
+            </button>
+          </p>
+        ) : (
+          <p
+            className={`problem ${problem.severity}`}
+            onClick={() => setProblem(null)}
+            title="Dismiss"
+          >
+            {problem.text}
+          </p>
+        ))}
 
       <footer className="controls">
         <button

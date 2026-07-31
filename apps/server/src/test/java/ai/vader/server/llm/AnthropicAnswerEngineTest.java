@@ -110,6 +110,25 @@ class AnthropicAnswerEngineTest {
                 .setBody(SSE));
     }
 
+    /**
+     * A deployment with no key used to send the literal key {@code "unset"} and
+     * surface the vendor's 401, which reads as "the model failed" when the real
+     * cause is a missing secret. The session layer maps this to
+     * {@code internal} rather than the retryable {@code llm_failed}.
+     */
+    @Test
+    void reportsAMissingKeyAsConfigurationRatherThanCallingTheApi() {
+        var unconfigured = new AnthropicAnswerEngine(
+                new AnthropicProperties("", "claude-opus-5", 1024, 2048, false, server.url("/").toString()));
+
+        unconfigured.stream(request(Optional.empty()), listener);
+
+        assertThat(errors).singleElement().isInstanceOf(AnswerEngine.NotConfiguredException.class);
+        // Nothing was enqueued, so reaching the network would have hung instead.
+        assertThat(server.getRequestCount()).isZero();
+        assertThat(deltas).isEmpty();
+    }
+
     @Test
     void streamsTextDeltasInOrder() {
         enqueueStream();

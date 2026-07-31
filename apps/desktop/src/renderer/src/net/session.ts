@@ -10,6 +10,12 @@ export type ConnectionState = 'idle' | 'connecting' | 'ready' | 'reconnecting' |
 export interface SessionCallbacks {
   onMessage: (message: ServerMessage) => void;
   onState: (state: ConnectionState, detail?: string) => void;
+  /**
+   * Asked for once per handshake rather than captured at connect time. Access
+   * tokens expire mid-session, and a reconnect carrying the token from an hour
+   * ago is rejected forever. `null` means there is no session left to resume.
+   */
+  token: () => Promise<string | null>;
 }
 
 const RECONNECT_BASE_MS = 500;
@@ -26,7 +32,6 @@ const PONG_TIMEOUT_MS = 10_000;
  */
 export class SessionSocket {
   private socket: WebSocket | null = null;
-  private token: string | null = null;
   private attempt = 0;
   private ready = false;
   private stopped = false;
@@ -42,8 +47,7 @@ export class SessionSocket {
     private readonly random: () => number = Math.random,
   ) {}
 
-  connect(accessToken: string): void {
-    this.token = accessToken;
+  connect(): void {
     this.stopped = false;
     this.attempt = 0;
     this.dropped = 0;
@@ -62,14 +66,28 @@ export class SessionSocket {
 
     socket.onopen = () => {
       // The handshake cannot carry an Authorization header, so the token goes
-      // in the first frame. The server closes 1008 if it does not arrive.
-      socket.send(
-        JSON.stringify({
-          type: 'hello',
-          protocolVersion: PROTOCOL_VERSION,
-          accessToken: this.token,
-        }),
-      );
+      // in the first frame. The server closes 1008 if none arrives within 5s,
+      // which is the budget this await spends — a Supabase refresh round trip
+      // is well inside it, and a cached token resolves immediately.
+      void this.callbacks.token().then((token) => {
+        // A reconnect may have replaced the socket while we were waiting.
+        if (this.socket !== socket) return;
+        if (token === null) {
+          // Reported as the frame the server would have sent, so the UI has
+          // one path for "you are signed out" rather than two.
+          const message = 'signed out — sign in again to continue';
+          this.callbacks.onMessage({ type: 'error', code: 'unauthorized', message });
+          this.giveUp(message);
+          return;
+        }
+        socket.send(
+          JSON.stringify({
+            type: 'hello',
+            protocolVersion: PROTOCOL_VERSION,
+            accessToken: token,
+          }),
+        );
+      });
     };
     socket.onmessage = (event: MessageEvent<unknown>) => this.receive(event.data);
     socket.onclose = () => this.onClose();
@@ -103,6 +121,15 @@ export class SessionSocket {
       return;
     }
 
+    if (message.data.type === 'error' && message.data.code === 'unauthorized') {
+      // Every handshake asks for a fresh token, so this is the *current*
+      // credential being refused. Retrying re-sends the same rejected token
+      // every 30s forever; only signing in again can fix it.
+      this.callbacks.onMessage(message.data);
+      this.giveUp(message.data.message);
+      return;
+    }
+
     if (message.data.type === 'ready') {
       this.ready = true;
       this.attempt = 0;
@@ -111,6 +138,12 @@ export class SessionSocket {
       this.callbacks.onState('ready');
     }
     this.callbacks.onMessage(message.data);
+  }
+
+  /** Stops for good. The reconnect loop cannot resolve what went wrong. */
+  private giveUp(detail: string): void {
+    this.close();
+    this.callbacks.onState('error', detail);
   }
 
   private onClose(): void {
@@ -225,8 +258,14 @@ export class SessionSocket {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
     this.stopHeartbeat();
-    this.socket?.close();
+    const dead = this.socket;
     this.socket = null;
     this.ready = false;
+    if (dead === null) return;
+    // Detached before closing: onClose decides what state to report next, and
+    // a close we asked for has nothing left to decide. Without this, giveUp's
+    // 'error' would be overwritten by the 'idle' that follows.
+    dead.onclose = null;
+    dead.close();
   }
 }

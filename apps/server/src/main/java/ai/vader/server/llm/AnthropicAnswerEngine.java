@@ -66,7 +66,7 @@ public class AnthropicAnswerEngine implements AnswerEngine {
             // Otherwise the SDK sends the literal key "unset" and the user is
             // shown a vendor 401, which reads as "the model failed" rather than
             // "this server was deployed without a key".
-            listener.onError(new IllegalStateException("the model is not configured on this server"));
+            listener.onError(new NotConfiguredException("the model is not configured on this server"));
             return () -> {};
         }
         return properties.fastMode() ? streamFast(request, listener) : streamStandard(request, listener);
