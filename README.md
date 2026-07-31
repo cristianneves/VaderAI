@@ -2,7 +2,7 @@
 
 A real-time AI copilot for interviews and study sessions. VaderAI runs as an always-on-top desktop overlay on Windows that listens to your call, watches your screen, and streams answers only you can see.
 
-**Status:** v0.11.0 — all eleven phases built. The overlay captures both audio channels, streams them to the backend, and renders a speaker-attributed transcript plus a streaming answer that fires on its own when the interviewer stops talking — grounded in a résumé, job description, and notes you supply. There is also a practice mode that runs a graded mock interview with no live call, and every session is kept for review and export afterwards. It packages to a Windows installer and the backend containerises for deployment. The live session now survives a dropped connection on its own, and a backend missing a provider key says so at boot rather than mid-interview. Provider keys (Deepgram, Anthropic) are needed to run it against the real services.
+**Status:** v0.12.0 — all twelve phases built. The overlay captures both audio channels, streams them to the backend, and renders a speaker-attributed transcript plus a streaming answer that fires on its own when the interviewer stops talking — grounded in a résumé, job description, and notes you supply. There is also a practice mode that runs a graded mock interview with no live call, and every session is kept for review and export afterwards. It packages to a Windows installer and the backend containerises for deployment. The live session now survives a dropped connection on its own, and a backend missing a provider key says so at boot rather than mid-interview. Phase 12 fixed the screen-capture path, which had been sending a payload too large for the socket to carry, made coding mode reachable without a screenshot, and put an hourly cap on billable model calls. Provider keys (Deepgram, Anthropic) are needed to run it against the real services.
 
 ---
 
@@ -19,7 +19,8 @@ screen capture (screenshots)  ──────→  Claude  →  answer streame
 - **Live transcript** with sub-second latency, attributed to _Interviewer_ or _You_.
 - **Streaming answers** triggered automatically when the other side finishes a question, or manually via hotkey.
 - **Ask bar** — type a question or a follow-up (`Ctrl+K`). The model sees the last three answers it gave, so _"explain that more simply"_ works.
-- **Screenshot Q&A** — capture a coding problem or a slide and ask about it. Screenshots switch to a coding prompt: approach, code, complexity, edge cases, rendered as copyable fenced blocks.
+- **Screenshot Q&A** — capture a coding problem or a slide and ask about it (`Ctrl+H`). Grabs are 1280×720 JPEG, roughly half the vision tokens of a 1080p capture, which is where the latency comes from; a screen too detailed to send says so instead of failing silently.
+- **Coding mode** — a `Code` toggle in the ask bar switches any question, typed or spoken, to the coding prompt: approach, code, complexity, edge cases, rendered as copyable fenced blocks. A screenshot always uses it.
 - **Multi-language** — thirteen languages plus Deepgram's code-switching mode. Transcript and answers both follow the setting.
 - **Knowledge base** — your résumé, the job description, and personal notes ground every answer.
 - **Practice mode** — mock interviews with graded feedback, no live call required.
@@ -28,7 +29,13 @@ screen capture (screenshots)  ──────→  Claude  →  answer streame
 - **Reconnects on its own** — a heartbeat catches a dropped Wi-Fi or a slept laptop within ~25s, and the session retries indefinitely with a capped backoff, refreshing the access token as it goes so a long interview outlives its expiry. The overlay says how much audio went untranscribed while it was down.
 - **Excluded from screen sharing** — the overlay uses Windows' `WDA_EXCLUDEFROMCAPTURE`, enforced by the desktop compositor.
 
-**Target:** first visible token within ~1.3–1.6 s of the question ending.
+**Target:** first visible token within ~1.3–1.6 s of the question ending. Every
+answer now logs a server-side `ttftMs` — ask to first model delta — beside its
+token usage. Read it as a floor: the number above also contains the 700 ms
+silence gate on the auto path and one hop to the overlay.
+
+Billable model calls are capped at 120 per user per hour. Reaching it shows an
+amber, dismissible notice; it does not interrupt an answer already streaming.
 
 ---
 
@@ -314,6 +321,8 @@ expected to agree.
 | [`docs/001-implementation-plan.md`](docs/001-implementation-plan.md)     | Architecture, latency budget, cost model, risk register  |
 | [`docs/002-implementation-phases.md`](docs/002-implementation-phases.md) | Phase-by-phase build checklist — **start here**          |
 | [`docs/003-deployment.md`](docs/003-deployment.md)                       | Building the installer, deploying the backend, releasing |
+| [`docs/004-competitive-analysis.md`](docs/004-competitive-analysis.md)   | Cluely and ParakeetAI at `0.8.0` — what drove Phase 9    |
+| [`docs/005-competitive-review.md`](docs/005-competitive-review.md)       | The same question at `0.11.0` — what drove Phase 12      |
 
 ---
 

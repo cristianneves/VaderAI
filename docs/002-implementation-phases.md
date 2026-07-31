@@ -1,6 +1,6 @@
 # 002 — MVP Implementation Phases
 
-**Status:** approved — all eleven phases built (see each exit criterion for what is still a manual check; Phase 8's needs a clean VM and a Fly.io account)
+**Status:** approved — all twelve phases built (see each exit criterion for what is still a manual check; Phase 8's needs a clean VM and a Fly.io account, and Phase 12's needs a real screen)
 **Scope:** Windows-only MVP — working app, no billing
 **Backend:** Java 21 + Spring Boot 3.4 (Maven)
 **Total estimate:** ~12–16 days
@@ -901,6 +901,201 @@ Still a manual check: the clock-based scenarios below.
 
 ---
 
+## Phase 12 — Screenshot budget, coding mode, spend guard
+
+**Goal:** fix what [`005-competitive-review.md`](005-competitive-review.md) found
+by reading our own code against Cluely's, rather than by comparing feature lists.
+**Estimate:** 1–2 days · **Risk:** low · **Depends on:** Phase 4, Phase 11
+Version moves to `0.12.0`.
+
+### 12a — A screen grab no longer closes the live session
+
+- [x] Capture at 1280×720 and encode JPEG q70 instead of 1080p PNG
+- [x] `MAX_SCREENSHOT_BASE64_CHARS = 262_144` in the zod schema, mirrored in
+      `ClientMessage`, enforced in main before send and again in the handler
+- [x] `maxTextMessageBufferSize` 64 KiB → 320 KiB
+- [x] `mimeType` widens to `image/png | image/jpeg`; `PROTOCOL_VERSION` stays 1
+- [x] `encodeShot` split into `main/screenshot-encode.ts` behind a type-only
+      electron import, so the size rule is testable
+- [x] `ScreenshotCapture | null` becomes a `ShotResult` union — "no screen" and
+      "too detailed" reach the overlay as different sentences
+
+**The defect.** `SessionWebSocketHandler` extends `AbstractWebSocketHandler` and
+never overrides `supportsPartialMessages()`, so Tomcat reassembles the whole text
+frame and enforces the buffer. A 1080p PNG of a code editor is 270–670 KB of
+base64 against 64 KiB, so the container closed the connection with **1009 before
+`handleTextMessage` ran** — no error frame, no answer, and a dead session. Only a
+near-blank screen would ever have fitted. `Ctrl+H` has been broken since Phase 4
+and the failure looked like a network drop.
+
+**The arithmetic.** Vision tokens ≈ `w × h / 750`, so 1080p is ~2,765 and 720p is
+~1,229 — 1,536 fewer per screenshot ask. The image sits _after_ the cache
+breakpoint (`AnthropicAnswerEngine.java:163`), so that saving repeats on every
+screenshot ask rather than once. 1280 is under Anthropic's ~1568px long-edge
+threshold, so nothing is downscaled again server-side. This is a latency fix as
+much as a size fix.
+
+The ceiling: 262,144 base64 chars ⇒ 196,608 bytes ⇒ 192 KiB of JPEG, against a
+q70 code screenshot at 74–138 KiB — 1.4–2.6× headroom, with the excess reserved
+for the photographic screen that is exactly what the ceiling exists to refuse.
+The buffer at 320 KiB leaves 64 Ki chars for the note and envelope, and costs
+640 KiB of `CharBuffer` per session — 137.5 MiB at fly.toml's hard limit of 200,
+against a ~768 MiB heap. Lowering the ceiling without lowering the buffer is
+safe; the reverse is the bug this sizing prevents.
+
+JPEG rather than PNG because a PNG screenshot's size depends on nothing we
+control. The cost is ringing around small glyphs, which is why quality is the
+knob to move if code turns out illegible — not resolution, which is where the
+token saving lives.
+
+`supportsPartialMessages()` with hand-rolled reassembly was considered and
+rejected: a better memory profile, but it re-implements what the container
+already does and adds a failure mode (a message begun and never finished) for a
+payload we now control.
+
+**Exit criterion:** `Ctrl+H` answers instead of dropping the session, and a
+screen too busy to send says so.
+
+**Met in tests.** `anOversizedScreenshotIsRefusedWithoutClosingTheSession` is the
+regression guard — it sends one char over the ceiling, which is under the buffer,
+and asserts a `bad_request` frame with the session still open and no model call.
+The real-screen check is manual and listed below.
+
+### 12b — Coding mode without a screenshot
+
+- [x] `ask` carries an optional `mode: 'interview' | 'coding'`; absent means
+      interview, so `PROTOCOL_VERSION` stays 1
+- [x] Threaded handler → `LiveSession.ask` → `PromptAssembler.assemble`
+- [x] A screenshot still forces `CODING` inside the assembler and takes no flag
+- [x] A `Code` toggle in the ask bar, state local to the bar so it survives the
+      composer closing
+- [x] `net/session.ts` puts `mode` on the wire only when it is `coding`
+- [x] Three quick actions added: fact check, questions to ask them, who is this
+
+`CODING_SYSTEM_PROMPT` and `coding-max-tokens: 2048` shipped in Phase 9c, but
+`PromptAssembler:118` chose coding **only** when an image was present. A problem
+read aloud or pasted into the ask bar got the interview prompt — first person, a
+few sentences to say out loud — at half the token budget. Cluely ships this as
+Smart Mode; we had the prompt and no way to ask for it.
+
+One override, not two: the image decides, and everything else is what the client
+said. A second way to express the same thing is a second thing to get wrong.
+
+**Exit criterion:** a typed coding question comes back as approach, code and
+complexity, and shares the screenshot path's cached prefix.
+
+**Met.** `aTypedCodingQuestionSharesTheScreenshotCachedPrefix` asserts the
+byte-identical prefix, which is the cache claim; `aScreenshotStaysCodingEvenWhen
+InterviewIsRequested` pins the override. The toggle widget itself is a manual
+check — there is no jsdom or component-test setup in the repo and adding two dev
+dependencies to test one boolean is not worth it; the behaviour is covered at the
+`session.ts` seam.
+
+### 12c — A cap on billable calls
+
+- [x] `limit/ModelCallLimiter` — fixed window per user, 120 calls/hour, time
+      passed in rather than read
+- [x] `LiveSession.ask` checks **before** `cancelInFlight()`
+- [x] `PracticeService.start` / `grade` / `report`
+- [x] `SummaryService.recapOf` **after** the stored-recap early return
+- [x] New `ErrorCode.RATE_LIMITED` → `transient` in `net/problem.ts`
+
+Nothing bounded spend before this. Auto-ask compounds it: it fires on any
+interviewer utterance, so a greeting buys a full Opus call.
+
+Two orderings carry the weight, and both have a test. The socket check is above
+`cancelInFlight` so hitting the cap cannot wipe an answer the user is still
+reading. The recap check is below the stored-recap return so reopening a recap
+never costs a slice of the hour — getting that backwards bills someone for
+reading a page.
+
+A fixed window in a `ConcurrentHashMap`, deliberately: `fly.toml` runs one
+machine with `auto_stop_machines = "off"`, so a distributed limiter is a
+dependency bought for a problem this deployment does not have. State resets on
+restart, which is fine for a spend guard and is the reason this is not where a
+paid quota should live if one is ever added.
+
+A `HandlerInterceptor` was rejected: billable `POST /v1/practice/{id}` and free
+`GET` share a path pattern and `addPathPatterns` cannot filter by method.
+
+**Question classification was considered and cut.** Every cheap heuristic is
+wrong in the direction that matters — a length gate drops "Why Postgres?" at 14
+characters and keeps "Can you hear me?" at 16; a `?`-and-wh-word gate drops "Walk
+me through your last project." A classifier call is itself a model call. The
+limit bounds the bill; classification is a quality change that needs 12d's
+numbers to justify a threshold. Deferred to Phase 13, where it shares a
+classifier with Dynamic Actions.
+
+**Exit criterion:** a user cannot run an unbounded bill, and being refused reads
+as "wait", not as a fault.
+
+**Met.** `ModelCallLimiterTest` covers the window, the cap, and per-user
+isolation; `aRefusedAskDoesNotCancelTheAnswerAlreadyStreaming` and
+`aStoredRecapIsServedEvenWhenTheUserIsOverTheirLimit` pin the two orderings.
+
+### 12d — Time to first token, measured
+
+- [x] `LiveSession.ask` timestamps before `prompts.assemble` and records the
+      first delta with a `compareAndSet`
+- [x] Logged on the existing usage line, with `mode=`
+- [x] An answer with no deltas logs `ttftMs=-1`, not a fabricated `0`
+
+[`001-implementation-plan.md`](001-implementation-plan.md) budgets ~1.3–1.6 s and
+treats it as the central claim, and `001:254` parked two decisions — fast mode on
+by default, auto-ask on by default — for _"measurements during Phase 4, not from
+first principles."_ **Those open items are now answerable:** nothing had ever
+recorded a time, which is why both defaults are still guesses. `ANTHROPIC_FAST_MODE`
+stays `false` until the logged numbers say otherwise, and that is now a decision
+with an input rather than a deferral.
+
+`mode` is on the line because 12b makes it variable and a screenshot ask carries
+~1,229 extra uncached input tokens; the figure is uninterpretable without it.
+
+**What it does not measure.** Server-side ask → first model delta. The product
+claim is end of question → first _visible_ token, which also contains
+`TurnDetector.SILENCE_MS` (700 ms) on the auto path and one hop to the overlay.
+So `product ≈ ttftMs + 700 + RTT` for auto and `≈ ttftMs + RTT` for manual. Read
+`ttftMs` as a floor; a reading of 900 is not the target met.
+
+No Micrometer and no metrics backend — `fly logs` and a grep are the tool.
+
+**Exit criterion:** every completed answer carries a latency number that can be
+correlated with its token usage.
+
+**Met.** Three tests assert the line, its absence on a failure before any token,
+and the `-1` sentinel. The numbers themselves are a manual check.
+
+### Cross-cutting
+
+- [x] `README.md` and this file updated; version `0.12.0` in both `package.json`s
+      and `pom.xml`
+- [x] [`005-competitive-review.md`](005-competitive-review.md) written; it
+      supersedes `004`'s gap table and ranks what is left
+
+### Verification
+
+**218 Java tests and 247 TypeScript tests, all green** (from 190 and 232 at
+`0.11.0`). `pnpm typecheck`, `pnpm lint` and `pnpm format:check` clean. No test
+was removed — the counts moved by exactly what was added, checked deliberately
+because Phase 11 recorded five tests vanishing under a flat total.
+
+Still manual, and none of it is proven by the suite:
+
+1. `Ctrl+H` against a real screen with a code editor open — the session stays up
+   and an answer streams. Then read the base64 back to a file and confirm the
+   code is legible at q70. If it is not, move the quality, not the resolution.
+2. `Ctrl+H` on a photographic screen — an amber sentence, socket alive.
+3. The `Code` toggle — a hand-typed problem returns a fenced block with
+   complexity, not truncated mid-function, which is what proves 2048 took effect.
+4. Lower `MAX_CALLS_PER_HOUR` to 2 locally: the third ask shows an amber
+   dismissible banner and does not cancel a streaming answer;
+   `POST /v1/practice/{id}` returns a readable 429.
+5. Run a real session and record the `ttftMs` spread for interview, coding and
+   screenshot asks here. **A log line nobody reads is not a measurement**, and
+   the fast-mode and auto-ask defaults are waiting on it.
+
+---
+
 ## Summary
 
 | Phase | Deliverable                         | Language | Est.         | Risk        |
@@ -917,7 +1112,8 @@ Still a manual check: the clock-based scenarios below.
 | 9     | Ask bar · language · coding · notes | both     | 2–3 d        | Low         |
 | 10    | Hardening (reconnect · server ops)  | both     | 1 d          | Low         |
 | 11    | Auth-aware session · error severity | both     | 1 d          | Low         |
-|       | **Total**                           |          | **~16–21 d** |             |
+| 12    | Screenshot budget · coding · limits | both     | 1–2 d        | Low         |
+|       | **Total**                           |          | **~17–23 d** |             |
 
 **Minimum demoable product:** Phases 0–4. Phases 5–8 make it a product someone else can use.
 

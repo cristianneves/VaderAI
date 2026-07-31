@@ -1,6 +1,6 @@
 {
   "name": "@vaderai/desktop",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "private": true,
   "//productName": "Electron derives app.getName() — and therefore userData — from productName, falling back to name. Without this the installed app keeps its session and logs under %APPDATA%\\@vaderai\\desktop, a nested directory named after the npm scope.",
   "productName": "VaderAI",
