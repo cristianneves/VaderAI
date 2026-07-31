@@ -106,7 +106,11 @@ export function HistoryPanel({ accessToken, onClose }: Props): React.JSX.Element
 
         {open.kind === 'live' &&
           (recap === null ? (
-            <button className="chip" disabled={busy || detail === null} onClick={() => loadRecap(open.id)}>
+            <button
+              className="chip"
+              disabled={busy || detail === null}
+              onClick={() => loadRecap(open.id)}
+            >
               {busy ? 'Writing recap…' : 'Recap this session'}
             </button>
           ) : (

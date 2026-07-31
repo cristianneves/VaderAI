@@ -49,7 +49,9 @@ describe('client fixtures', () => {
   });
 
   it('rejects an empty question rather than asking the model about nothing', () => {
-    expect(() => clientMessageSchema.parse({ ...(client['ask'] as object), question: '' })).toThrow();
+    expect(() =>
+      clientMessageSchema.parse({ ...(client['ask'] as object), question: '' }),
+    ).toThrow();
   });
 
   it('rejects a question over the ceiling', () => {

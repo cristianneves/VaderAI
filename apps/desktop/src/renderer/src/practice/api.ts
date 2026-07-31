@@ -1,18 +1,12 @@
-import { serverHttpUrl } from '../auth/supabase';
+import { authedFetch } from '../net/http';
 import type { PracticeQuestion, PracticeReport } from './practice';
 
 interface QuestionSet {
   questions: PracticeQuestion[];
 }
 
-async function call(token: string, path: string, init: RequestInit = {}): Promise<Response> {
-  const response = await fetch(`${serverHttpUrl}/v1/practice${path}`, {
-    ...init,
-    headers: { ...init.headers, Authorization: `Bearer ${token}` },
-  });
-  if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
-  return response;
-}
+const call = (token: string, path: string, init: RequestInit = {}): Promise<Response> =>
+  authedFetch(`/v1/practice${path}`, token, init);
 
 /**
  * Generates the question set from the stored job description. The session id is

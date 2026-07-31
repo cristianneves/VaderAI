@@ -356,6 +356,25 @@ button.link {
   cursor: pointer;
 }
 
+/* Amber, not red: the session is coming back on its own. No pointer either —
+   this one cannot be dismissed. */
+.reconnecting {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 5px 10px;
+  background: rgba(122, 88, 28, 0.85);
+  color: #ffe9c4;
+  font-size: 11px;
+}
+
+.reconnecting .meta {
+  margin-left: auto;
+  color: #d8bd90;
+}
+
 #session-language {
   padding: 4px 6px;
   border: 1px solid #3a3a4c;

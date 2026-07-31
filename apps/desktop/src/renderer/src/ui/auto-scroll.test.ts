@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { isPinnedToBottom, PIN_TOLERANCE_PX } from './auto-scroll';
 
 describe('isPinnedToBottom', () => {
-  const pane = (scrollTop: number): { scrollTop: number; clientHeight: number; scrollHeight: number } => ({
+  const pane = (
+    scrollTop: number,
+  ): { scrollTop: number; clientHeight: number; scrollHeight: number } => ({
     scrollTop,
     clientHeight: 200,
     scrollHeight: 1000,

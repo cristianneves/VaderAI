@@ -8,7 +8,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+// The provider keys are set because health is DOWN without them by design —
+// see ProviderHealthIndicator. ProviderHealthIndicatorTest covers the
+// unconfigured cases without paying for a context.
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {"vaderai.anthropic.api-key=test-key", "vaderai.deepgram.api-key=test-key"})
 class VaderAiApplicationTests {
 
     @LocalServerPort
