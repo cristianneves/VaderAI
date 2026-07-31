@@ -289,7 +289,11 @@ export function App(): React.JSX.Element {
         />
       ) : (
         <>
-          <section className="pane transcript" ref={transcriptPane.ref} onScroll={transcriptPane.onScroll}>
+          <section
+            className="pane transcript"
+            ref={transcriptPane.ref}
+            onScroll={transcriptPane.onScroll}
+          >
             <h2>Transcript</h2>
             {lines.length === 0 ? (
               <p className="empty">
@@ -309,7 +313,10 @@ export function App(): React.JSX.Element {
             <h2>
               Answer{answer.streaming && <span className="cursor"> ▍</span>}
               {answer.text !== '' && (
-                <button className="chip copy-answer" onClick={() => window.vader.copyText(answer.text)}>
+                <button
+                  className="chip copy-answer"
+                  onClick={() => window.vader.copyText(answer.text)}
+                >
                   Copy
                 </button>
               )}

@@ -572,7 +572,7 @@ from the line at the bottom of this file.
 
 **The focus problem is the interesting part.** The overlay is `focusable: false`,
 which is what stops it stealing focus from the meeting — and on Windows maps to
-`WS_EX_NOACTIVATE`, so a text field receives no keystrokes. Focus is *borrowed*:
+`WS_EX_NOACTIVATE`, so a text field receives no keystrokes. Focus is _borrowed_:
 granted when the composer opens, handed back on submit or `Escape`
 (`main/overlay-window.ts::setComposing`). Blur has to come **before** dropping
 focusability, or Windows is left with no active window rather than returning to
@@ -580,7 +580,7 @@ the meeting.
 
 Memory is capped at three because those turns sit after the breakpoint and are
 billed in full on every subsequent question. `AnswerRequest.Exchange` carries a
-*short* rendering of what was asked, not the transcript — the transcript already
+_short_ rendering of what was asked, not the transcript — the transcript already
 travels in `conversation`, and repeating it per exchange would grow the request
 quadratically over a session.
 
@@ -661,7 +661,7 @@ every view, which this file already flags as re-billing a model call to read a
 page; a recap is read far more often than it is produced. `key_points` and
 `action_items` are `text[]` rather than `jsonb` because Spring Data JDBC maps
 Postgres arrays with no custom converter, and nothing ever queries inside them.
-Written with `JdbcAggregateTemplate.insert` rather than `save`: the id *is* the
+Written with `JdbcAggregateTemplate.insert` rather than `save`: the id _is_ the
 session id and is therefore never null, so `save` would issue an UPDATE against
 a row that does not exist.
 
