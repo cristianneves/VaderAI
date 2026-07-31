@@ -41,6 +41,8 @@ export function App(): React.JSX.Element {
   const [audioState, setAudioState] = useState<CaptureState>('idle');
   const [audioError, setAudioError] = useState<string | null>(null);
   const [buffered, setBuffered] = useState(0);
+  /** Frames the socket had nowhere to send. Non-zero only while disconnected. */
+  const [lostFrames, setLostFrames] = useState(0);
   const [dumpPath, setDumpPath] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [connection, setConnection] = useState<ConnectionState>('idle');
@@ -55,6 +57,8 @@ export function App(): React.JSX.Element {
   const [composing, setComposing] = useState(false);
   /** Last server-reported failure. Cleared when a session comes back up. */
   const [problem, setProblem] = useState<string | null>(null);
+  /** Carries "reconnecting… (attempt 3)" — the bare state word does not. */
+  const [connectionDetail, setConnectionDetail] = useState<string | null>(null);
 
   /** Clicking the open panel's button returns to the live view. */
   const toggle = (panel: View): void => setView((current) => (current === panel ? 'live' : panel));
@@ -70,6 +74,9 @@ export function App(): React.JSX.Element {
       frames.current.push(frame);
       socket.current?.sendAudio(frame);
       setBuffered(frames.current.size);
+      // Mirrored into state rather than read at render time: once the ring
+      // buffer is full `buffered` stops changing, and nothing would re-render.
+      setLostFrames(socket.current?.droppedFrames ?? 0);
     },
     (state, detail) => {
       setAudioState(state);
@@ -138,6 +145,7 @@ export function App(): React.JSX.Element {
   }, [token]);
 
   const listening = audioState === 'starting' || audioState === 'running';
+  const lostSeconds = lostFrames / FRAMES_PER_SECOND;
 
   const onboarding = nextStep({
     signedIn: session !== null,
@@ -188,8 +196,9 @@ export function App(): React.JSX.Element {
         },
         onState: (state, detail) => {
           setConnection(state);
-          // The detail is the only place "gave up after 5 reconnect attempts"
-          // is ever said; the bare state word does not carry it.
+          setConnectionDetail(detail ?? null);
+          // 'error' is now terminal only — protocol drift, which reconnecting
+          // cannot fix. A dropped connection reports 'reconnecting' instead.
           if (state === 'error' && detail !== undefined) setProblem(detail);
         },
       });
@@ -323,6 +332,18 @@ export function App(): React.JSX.Element {
             onClose={closeComposer}
           />
         </>
+      )}
+
+      {connection === 'reconnecting' && (
+        // Not dismissible, unlike an error: this one is the live state of the
+        // session, and hiding it would hide that nothing is being transcribed.
+        <p className="reconnecting">
+          <span>{connectionDetail ?? 'reconnecting…'}</span>
+          <span className="meta">{lostSeconds.toFixed(1)}s not transcribed</span>
+          <button className="chip" onClick={() => socket.current?.retryNow()}>
+            Retry now
+          </button>
+        </p>
       )}
 
       {problem !== null && (

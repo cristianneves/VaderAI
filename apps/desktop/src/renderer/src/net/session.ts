@@ -13,7 +13,12 @@ export interface SessionCallbacks {
 }
 
 const RECONNECT_BASE_MS = 500;
-const MAX_RECONNECTS = 5;
+/** Retrying is unbounded, so the delay needs a ceiling of its own. */
+const MAX_BACKOFF_MS = 30_000;
+/** ±20%, so a server restart does not bring every client back in the same instant. */
+const JITTER = 0.2;
+const HEARTBEAT_MS = 15_000;
+const PONG_TIMEOUT_MS = 10_000;
 
 /**
  * The client half of the session protocol: JSON control up, audio frames up as
@@ -26,23 +31,30 @@ export class SessionSocket {
   private ready = false;
   private stopped = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
+  private pongDeadline: ReturnType<typeof setTimeout> | null = null;
+  private dropped = 0;
 
   constructor(
     private readonly url: string,
     private readonly callbacks: SessionCallbacks,
     private readonly open: (url: string) => WebSocket = (url) => new WebSocket(url),
+    private readonly random: () => number = Math.random,
   ) {}
 
   connect(accessToken: string): void {
     this.token = accessToken;
     this.stopped = false;
     this.attempt = 0;
+    this.dropped = 0;
     this.openSocket();
   }
 
   private openSocket(): void {
     this.ready = false;
-    this.callbacks.onState(this.attempt === 0 ? 'connecting' : 'reconnecting');
+    // Only the first attempt announces itself here. Every later one was already
+    // announced by onClose, the moment the gap opened.
+    if (this.attempt === 0) this.callbacks.onState('connecting');
 
     const socket = this.open(this.url);
     socket.binaryType = 'arraybuffer';
@@ -61,7 +73,9 @@ export class SessionSocket {
     };
     socket.onmessage = (event: MessageEvent<unknown>) => this.receive(event.data);
     socket.onclose = () => this.onClose();
-    socket.onerror = () => this.callbacks.onState('error', 'connection failed');
+    // onerror is deliberately left unhandled: the spec fires onclose after it
+    // every time, and onClose is the one place that decides what comes next.
+    // Reporting 'error' here made a retry that was still pending look terminal.
   }
 
   private receive(data: unknown): void {
@@ -78,13 +92,22 @@ export class SessionSocket {
     const message = serverMessageSchema.safeParse(parsed);
     if (!message.success) {
       // A message we cannot parse means the two protocol halves have drifted.
+      // Reconnecting cannot fix that, so this one stays terminal.
       this.callbacks.onState('error', 'unknown message from server');
+      return;
+    }
+
+    if (message.data.type === 'pong') {
+      // Heartbeat plumbing. The UI has no use for it, so it stops here.
+      this.clearPongDeadline();
       return;
     }
 
     if (message.data.type === 'ready') {
       this.ready = true;
       this.attempt = 0;
+      this.dropped = 0;
+      this.startHeartbeat();
       this.callbacks.onState('ready');
     }
     this.callbacks.onMessage(message.data);
@@ -93,23 +116,80 @@ export class SessionSocket {
   private onClose(): void {
     this.ready = false;
     this.socket = null;
+    this.stopHeartbeat();
     if (this.stopped) {
       this.callbacks.onState('idle');
       return;
     }
-    if (this.attempt >= MAX_RECONNECTS) {
-      this.callbacks.onState('error', `gave up after ${MAX_RECONNECTS} reconnect attempts`);
-      return;
-    }
-    const delay = RECONNECT_BASE_MS * 2 ** this.attempt;
     this.attempt += 1;
-    this.timer = setTimeout(() => this.openSocket(), delay);
+    // Reported now rather than when the retry fires: the user should see the
+    // gap the moment it opens, not after a backoff that can reach 30s.
+    this.callbacks.onState('reconnecting', `reconnecting… (attempt ${this.attempt})`);
+    this.timer = setTimeout(() => this.openSocket(), this.backoff());
+  }
+
+  /** Exponential from the first retry, capped, then jittered. */
+  private backoff(): number {
+    const base = Math.min(RECONNECT_BASE_MS * 2 ** (this.attempt - 1), MAX_BACKOFF_MS);
+    return Math.round(base * (1 + JITTER * (this.random() * 2 - 1)));
+  }
+
+  /**
+   * A dropped Wi-Fi or a slept laptop leaves a socket the OS still calls open,
+   * on which nothing will ever arrive again. The server answers `ping` with
+   * `pong`; silence past the deadline means the connection is gone.
+   */
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeat = setInterval(() => this.beat(), HEARTBEAT_MS);
+  }
+
+  private beat(): void {
+    if (this.pongDeadline !== null) return;
+    this.sendJson({ type: 'ping' });
+    this.pongDeadline = setTimeout(() => {
+      this.pongDeadline = null;
+      // Closing by hand is what puts us on the reconnect path; waiting for the
+      // OS to time the socket out takes minutes.
+      this.socket?.close();
+    }, PONG_TIMEOUT_MS);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeat !== null) clearInterval(this.heartbeat);
+    this.heartbeat = null;
+    this.clearPongDeadline();
+  }
+
+  private clearPongDeadline(): void {
+    if (this.pongDeadline !== null) clearTimeout(this.pongDeadline);
+    this.pongDeadline = null;
+  }
+
+  /** Skips the rest of the backoff. Nothing to do when no retry is pending. */
+  retryNow(): void {
+    if (this.stopped || this.timer === null) return;
+    clearTimeout(this.timer);
+    this.timer = null;
+    this.openSocket();
   }
 
   /** Frames sent before the server is ready are dropped, not queued. */
   sendAudio(frame: Int16Array): void {
-    if (!this.ready || this.socket === null) return;
+    if (!this.ready || this.socket === null) {
+      this.dropped += 1;
+      return;
+    }
     this.socket.send(frame.buffer as ArrayBuffer);
+  }
+
+  /**
+   * Frames dropped since the connection last came up. What the reconnect notice
+   * turns into "N seconds not transcribed" — a silent gap is worse than a
+   * measured one.
+   */
+  get droppedFrames(): number {
+    return this.dropped;
   }
 
   /**
@@ -144,6 +224,7 @@ export class SessionSocket {
     this.stopped = true;
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
+    this.stopHeartbeat();
     this.socket?.close();
     this.socket = null;
     this.ready = false;
