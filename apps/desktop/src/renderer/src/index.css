@@ -356,6 +356,25 @@ button.link {
   cursor: pointer;
 }
 
+/* The next question may well work, so this reads as a warning rather than a
+   failure — same amber as the reconnect notice. */
+.problem.transient {
+  background: rgba(122, 88, 28, 0.85);
+  color: #ffe9c4;
+}
+
+/* Nothing to dismiss: the session is over until they sign in again. */
+.problem.fatal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+}
+
+.problem.fatal .chip {
+  margin-left: auto;
+}
+
 /* Amber, not red: the session is coming back on its own. No pointer either —
    this one cannot be dismissed. */
 .reconnecting {
