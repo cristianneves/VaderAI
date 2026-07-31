@@ -1,14 +1,8 @@
-import { serverHttpUrl } from '../auth/supabase';
+import { authedFetch } from '../net/http';
 import type { KnowledgeKind, KnowledgeView } from './knowledge';
 
-async function call(token: string, path: string, init: RequestInit = {}): Promise<Response> {
-  const response = await fetch(`${serverHttpUrl}/v1/knowledge${path}`, {
-    ...init,
-    headers: { ...init.headers, Authorization: `Bearer ${token}` },
-  });
-  if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
-  return response;
-}
+const call = (token: string, path: string, init: RequestInit = {}): Promise<Response> =>
+  authedFetch(`/v1/knowledge${path}`, token, init);
 
 export const fetchKnowledge = async (token: string): Promise<KnowledgeView> =>
   (await call(token, '')).json() as Promise<KnowledgeView>;
@@ -50,14 +44,8 @@ export interface PreferencesView {
   languages: { code: string; label: string }[];
 }
 
-async function preferences(token: string, init: RequestInit = {}): Promise<Response> {
-  const response = await fetch(`${serverHttpUrl}/v1/preferences`, {
-    ...init,
-    headers: { ...init.headers, Authorization: `Bearer ${token}` },
-  });
-  if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
-  return response;
-}
+const preferences = (token: string, init: RequestInit = {}): Promise<Response> =>
+  authedFetch('/v1/preferences', token, init);
 
 export const fetchPreferences = async (token: string): Promise<PreferencesView> =>
   (await preferences(token)).json() as Promise<PreferencesView>;

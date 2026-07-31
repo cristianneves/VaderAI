@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -56,7 +57,7 @@ class PreferencesController {
     }
 
     @ExceptionHandler(PreferencesService.UnknownLanguageException.class)
-    ResponseEntity<String> onUnknownLanguage(PreferencesService.UnknownLanguageException failed) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(failed.getMessage());
+    ProblemDetail onUnknownLanguage(PreferencesService.UnknownLanguageException failed) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, failed.getMessage());
     }
 }

@@ -18,6 +18,12 @@ spring:
   sql:
     init:
       mode: never
+  servlet:
+    multipart:
+      # Boot's default is 1MB, which an ordinary PDF résumé passes without
+      # trying — the knowledge base upload failed on real files.
+      max-file-size: 10MB
+      max-request-size: 10MB
   security:
     oauth2:
       resourceserver:
@@ -61,4 +67,7 @@ management:
 
 logging:
   level:
-    ai.vader.server: DEBUG
+    # INFO by default: this service handles interview transcripts, and DEBUG
+    # here is verbose enough that it does not belong in a deployed environment.
+    # Set LOG_LEVEL=DEBUG locally when you need it.
+    ai.vader.server: ${LOG_LEVEL:INFO}

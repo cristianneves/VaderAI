@@ -46,6 +46,9 @@ primary_region = "gru"
     timeout = "5s"
     # Spring Boot plus the JWKS fetch needs a moment before it answers.
     grace_period = "40s"
+    # Health is DOWN when ANTHROPIC_API_KEY or DEEPGRAM_API_KEY is unset, so a
+    # deploy with missing secrets fails here rather than at someone's first
+    # question. `fly logs` names which one — see ProviderHealthIndicator.
 
 [[vm]]
   size = "shared-cpu-1x"

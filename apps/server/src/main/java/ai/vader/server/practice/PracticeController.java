@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -98,12 +99,12 @@ class PracticeController {
 
     /** Actionable rather than a bare 409 — this one is the user's to fix, in Settings. */
     @ExceptionHandler(PracticeService.MissingJobDescriptionException.class)
-    ResponseEntity<String> onMissingJobDescription(PracticeService.MissingJobDescriptionException failed) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(failed.getMessage());
+    ProblemDetail onMissingJobDescription(PracticeService.MissingJobDescriptionException failed) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, failed.getMessage());
     }
 
     @ExceptionHandler(PracticeService.UnknownPracticeSessionException.class)
-    ResponseEntity<String> onUnknownSession(PracticeService.UnknownPracticeSessionException failed) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(failed.getMessage());
+    ProblemDetail onUnknownSession(PracticeService.UnknownPracticeSessionException failed) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, failed.getMessage());
     }
 }

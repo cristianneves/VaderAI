@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -135,8 +136,8 @@ class SessionHistoryController {
     }
 
     @ExceptionHandler(SummaryService.EmptySessionException.class)
-    ResponseEntity<String> onEmptySession(SummaryService.EmptySessionException failed) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(failed.getMessage());
+    ProblemDetail onEmptySession(SummaryService.EmptySessionException failed) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, failed.getMessage());
     }
 
     /** The database cascade removes the turns, answers, and practice questions. */

@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -85,7 +86,7 @@ class KnowledgeController {
     }
 
     @ExceptionHandler(DocumentTextExtractor.UnsupportedDocumentException.class)
-    ResponseEntity<String> onUnsupportedDocument(DocumentTextExtractor.UnsupportedDocumentException failed) {
-        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(failed.getMessage());
+    ProblemDetail onUnsupportedDocument(DocumentTextExtractor.UnsupportedDocumentException failed) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNSUPPORTED_MEDIA_TYPE, failed.getMessage());
     }
 }

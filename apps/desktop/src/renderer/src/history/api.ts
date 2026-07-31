@@ -1,14 +1,8 @@
-import { serverHttpUrl } from '../auth/supabase';
+import { authedFetch } from '../net/http';
 import type { SessionDetail, SessionRecap, SessionSummary } from './history';
 
-async function call(token: string, path: string, init: RequestInit = {}): Promise<Response> {
-  const response = await fetch(`${serverHttpUrl}/v1/sessions${path}`, {
-    ...init,
-    headers: { ...init.headers, Authorization: `Bearer ${token}` },
-  });
-  if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
-  return response;
-}
+const call = (token: string, path: string, init: RequestInit = {}): Promise<Response> =>
+  authedFetch(`/v1/sessions${path}`, token, init);
 
 export const fetchSessions = async (token: string): Promise<SessionSummary[]> =>
   (await (await call(token, '')).json()) as SessionSummary[];
