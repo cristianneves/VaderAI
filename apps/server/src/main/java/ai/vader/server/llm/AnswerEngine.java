@@ -27,6 +27,17 @@ public interface AnswerEngine {
         void close();
     }
 
+    /**
+     * The server was deployed without a provider key. Kept distinct from a call
+     * that failed because this one will not fix itself: asking again is not the
+     * remedy, editing the deployment is.
+     */
+    class NotConfiguredException extends IllegalStateException {
+        public NotConfiguredException(String message) {
+            super(message);
+        }
+    }
+
     /** Cache reads are the number worth watching — they should be non-zero after the first answer. */
     record AnswerUsage(long inputTokens, long outputTokens, long cacheReadInputTokens, long cacheCreationInputTokens) {}
 }

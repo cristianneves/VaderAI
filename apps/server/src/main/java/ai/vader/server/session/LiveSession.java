@@ -132,7 +132,11 @@ final class LiveSession {
             public void onError(Throwable cause) {
                 // Nothing recorded: a failed answer was never given.
                 log.warn("answer {} failed", answerId, cause);
-                send(new ServerMessage.Failure(ErrorCode.LLM_FAILED, "could not generate an answer"));
+                // A deployment missing its key is not something asking again
+                // fixes, so it does not go out as a retryable model failure.
+                send(cause instanceof AnswerEngine.NotConfiguredException
+                        ? new ServerMessage.Failure(ErrorCode.INTERNAL, "the server is missing its model configuration")
+                        : new ServerMessage.Failure(ErrorCode.LLM_FAILED, "could not generate an answer"));
                 send(new ServerMessage.AnswerEnd(answerId));
             }
         }));
