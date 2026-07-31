@@ -1,6 +1,6 @@
 # 002 — MVP Implementation Phases
 
-**Status:** approved — all ten phases built (see each exit criterion for what is still a manual check; Phase 8's needs a clean VM and a Fly.io account)
+**Status:** approved — all eleven phases built (see each exit criterion for what is still a manual check; Phase 8's needs a clean VM and a Fly.io account)
 **Scope:** Windows-only MVP — working app, no billing
 **Backend:** Java 21 + Spring Boot 3.4 (Maven)
 **Total estimate:** ~12–16 days
@@ -814,6 +814,93 @@ answer quality.
 
 ---
 
+## Phase 11 — Auth-aware session
+
+**Goal:** finish what Phase 10 started, including the bug it made worse.
+**Estimate:** 1 day · **Risk:** low · **Depends on:** Phase 10
+
+Version moves to `0.11.0`.
+
+### 11a — The socket asks for a token instead of remembering one
+
+- [x] `SessionCallbacks.token: () => Promise<string | null>` replaces the token
+      captured at `connect()`. Resolved once per handshake, so Supabase's
+      `autoRefreshToken` finally reaches the socket
+- [x] A superseded socket's late token is discarded rather than sent
+- [x] `unauthorized` stops the retry loop instead of feeding it
+- [x] A provider returning `null` reports the frame the server would have sent
+      and stops, rather than opening a socket to be closed with 1008
+- [x] `close()` detaches `onclose` before closing, so an intentional stop no
+      longer routes through the code that decides what to report next
+
+**Phase 10 made this worse, which is why it is here.** `connect(accessToken)`
+took a snapshot and every reconnect replayed it (`net/session.ts:70`). Once the
+token expired the server rejected each handshake and closed; before Phase 10 the
+five-attempt ceiling turned that into a visible give-up after ~15s, and after it
+the client retried a dead credential every 30s forever.
+
+A provider rather than a `setToken()` from the App on purpose: a setter depends
+on `onAuthStateChange` having fired _before_ the reconnect, and the case that
+breaks that ordering — a laptop waking with both an expired token and a dead
+socket — is the exact scenario Phase 10's heartbeat exists to catch.
+
+The 5s server-side auth deadline (`SessionWebSocketHandler.java:54`) is the
+budget this await spends. A cached token resolves immediately; a refresh is one
+round trip to Supabase auth, well inside it.
+
+**Exit criterion:** a session outlives its token expiry without the user
+noticing, and a genuinely dead session stops cleanly with a way back to sign-in.
+
+**Met in tests.** 32 tests in `net/session.test.ts`, including the regression
+guard that a rejected credential opens no further sockets. The clock-based
+manual check is in the verification below.
+
+### 11b — Errors are shown by what the user can do about them
+
+- [x] `net/problem.ts` maps the five protocol codes to `fatal` / `transient` /
+      `bug`, as a total `Record` so a new code fails to compile rather than
+      falling through a `default`
+- [x] `unauthorized` → red, not dismissible, with "Sign in again"
+- [x] `stt_failed` / `llm_failed` → amber, dismissible, cleared by the next
+      `ready`
+- [x] `bad_request` / `internal` → red, dismissible
+- [x] `AnswerEngine.NotConfiguredException` lets `LiveSession` send
+      `ErrorCode.INTERNAL` for a missing key — **the first time the server has
+      ever emitted that code**, which had sat unused in the protocol since
+      Phase 3
+
+`error.code` had travelled on the wire since Phase 3 and been discarded by the
+client the whole time, so a dead credential and a hiccup in transcription looked
+identical — and `unauthorized` had no path back, because the sign-in screen only
+renders when the Supabase session is already `null`.
+
+**Exit criterion:** a missing server key reads as a server fault, not as
+something worth asking again; a rejected credential offers sign-in.
+
+**Met.** `problem.test.ts` covers all five codes and asserts the map stays total;
+`AnthropicAnswerEngineTest` asserts a keyless engine reports configuration
+without touching the network.
+
+### Cross-cutting
+
+- [x] `README.md` and this file updated; version `0.11.0` in both `package.json`s
+      and `pom.xml`
+
+### Verification
+
+**190 Java tests and 232 TypeScript tests, all green.** `pnpm typecheck`,
+`pnpm lint` and `pnpm format:check` clean.
+
+One thing worth recording: **the heartbeat tests were briefly lost.** Rewriting
+`session.test.ts` for the async handshake dropped Phase 10's five heartbeat
+tests without any suite going red — the count went 27 → 27 because five new ones
+replaced them. Restored. Worth remembering that a passing suite says nothing
+about a test that no longer exists.
+
+Still a manual check: the clock-based scenarios below.
+
+---
+
 ## Summary
 
 | Phase | Deliverable                         | Language | Est.         | Risk        |
@@ -829,7 +916,8 @@ answer quality.
 | 8     | Installer + deployed backend        | both     | 1–2 d        | Medium      |
 | 9     | Ask bar · language · coding · notes | both     | 2–3 d        | Low         |
 | 10    | Hardening (reconnect · server ops)  | both     | 1 d          | Low         |
-|       | **Total**                           |          | **~15–20 d** |             |
+| 11    | Auth-aware session · error severity | both     | 1 d          | Low         |
+|       | **Total**                           |          | **~16–21 d** |             |
 
 **Minimum demoable product:** Phases 0–4. Phases 5–8 make it a product someone else can use.
 
