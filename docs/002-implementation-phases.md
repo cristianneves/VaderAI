@@ -1,11 +1,11 @@
 # 002 — MVP Implementation Phases
 
-**Status:** approved — all eight phases built (see each exit criterion for what is still a manual check; Phase 8's needs a clean VM and a Fly.io account)
+**Status:** approved — all nine phases built (see each exit criterion for what is still a manual check; Phase 8's needs a clean VM and a Fly.io account, Phase 9's needs a working Supabase port)
 **Scope:** Windows-only MVP — working app, no billing
 **Backend:** Java 21 + Spring Boot 3.4 (Maven)
 **Total estimate:** ~12–16 days
 
-Eight phases. Each has a hard exit criterion — do not start the next phase until the current one passes it. The ordering is driven by risk, not convenience: the two things most likely to fail (system-audio loopback, capture-invisible overlay) are proven in Phases 1 and 2, before anything is built on top of them.
+Eight phases to the MVP, plus Phase 9 for competitive parity. Each has a hard exit criterion — do not start the next phase until the current one passes it. The ordering is driven by risk, not convenience: the two things most likely to fail (system-audio loopback, capture-invisible overlay) are proven in Phases 1 and 2, before anything is built on top of them.
 
 Architecture, backend stack rationale, cost model, and risk register live in [`001-implementation-plan.md`](001-implementation-plan.md). This document is the execution checklist.
 
@@ -34,6 +34,9 @@ Overlay Shell  Audio Capture           Backend + STT
                     └──────────┼──────────┘
                                ▼
                           Phase 8  Packaging
+                               │
+                               ▼
+                          Phase 9  Competitive parity
 ```
 
 **Parallelizable:** Phases 1, 2, and 3 are independent after Phase 0 — and now split cleanly by language, so a second person can take the Java track (Phase 3) while the first does the Electron track (Phases 1–2). Solo, run them in the order given; Phase 2 carries the most risk and must not be deferred. Phases 6 and 7 are independent of each other, but Phase 6 turned out to need Phase 5 — a mock interview has nothing to ask about without the stored job description.
@@ -543,6 +546,164 @@ Not covered, and worth being plain about:
 
 ---
 
+## Phase 9 — Competitive parity
+
+**Goal:** close the four gaps that a side-by-side demo against Cluely or
+ParakeetAI would lose on.
+**Estimate:** 2–3 days · **Risk:** low · **Depends on:** all
+
+Driven by [`004-competitive-analysis.md`](004-competitive-analysis.md), which
+compared our tree at `0.8.0` against both products. Its conclusion: **we win on
+the things that are hard to build — two-channel speaker attribution, the latency
+budget, graded practice mode — and lose on the things that are cheap.** This
+phase is the cheap half. Version moves to `0.9.0`.
+
+The stealth features ParakeetAI advertises (Task Manager, tab-switch, cursor,
+proctoring) were evaluated in that document and **stay out of scope**, unchanged
+from the line at the bottom of this file.
+
+### 9a — Ask bar and follow-up memory
+
+- [x] `ask.question` added to the protocol, optional so an old client still validates and `PROTOCOL_VERSION` stays `1`
+- [x] `screenshot.note` stops being discarded — the field existed since Phase 4 and never reached the prompt
+- [x] Prior exchanges replayed as real user/assistant turns, capped at **3**, entirely after the cache breakpoint
+- [x] `Ctrl+K` opens a composer; quick actions ("What next?", "Shorter", "More detail", "Recap") are ordinary typed questions
+- [x] Server `error` frames and the connection `detail` string reach the screen instead of being dropped
+
+**The focus problem is the interesting part.** The overlay is `focusable: false`,
+which is what stops it stealing focus from the meeting — and on Windows maps to
+`WS_EX_NOACTIVATE`, so a text field receives no keystrokes. Focus is *borrowed*:
+granted when the composer opens, handed back on submit or `Escape`
+(`main/overlay-window.ts::setComposing`). Blur has to come **before** dropping
+focusability, or Windows is left with no active window rather than returning to
+the meeting.
+
+Memory is capped at three because those turns sit after the breakpoint and are
+billed in full on every subsequent question. `AnswerRequest.Exchange` carries a
+*short* rendering of what was asked, not the transcript — the transcript already
+travels in `conversation`, and repeating it per exchange would grow the request
+quadratically over a session.
+
+**Exit criterion:** `Ctrl+K`, type "explain that more simply", get an answer that
+refers to the previous one. `Ctrl+H` with a note asks about that note. A failed
+answer shows an error rather than silence.
+
+**Met in the parts that do not need a key.** `AnthropicAnswerEngineTest` asserts
+on the wire that two prior exchanges arrive as five messages —
+user/assistant/user/assistant/user — with the live question last and nothing
+remembered leaking into the system blocks. `PromptAssemblerTest` pins that a
+typed question stays out of the cached prefix and that the prefix is byte-
+identical with and without memory. **Whether follow-ups actually read as
+follow-ups needs `ANTHROPIC_API_KEY`.**
+
+### 9b — Language
+
+- [x] `language` column on `profiles` (migration `20260801090000`)
+- [x] `GET`/`PUT /v1/preferences`; the choice list ships in the response so the client hard-codes nothing
+- [x] Deepgram gets a `language` parameter it never had
+- [x] A line in the **cached** system block saying what to answer in
+- [x] Practice mode included — questions, feedback and rewrites all follow the session language
+- [x] Dropdown in Settings
+
+Thirteen options, including Deepgram's `multi` for code-switching. Codes are an
+**allow-list enum**, not free text: the value is interpolated into the Deepgram
+query string, and `LanguageTest` asserts that `en&punctuate=false` and friends
+are rejected.
+
+The language belongs in the cached prefix — it is constant for a session, so it
+costs one cold write and then caches, and two users in different languages
+correctly get different prefixes rather than one answering in the other's.
+
+**Exit criterion:** set Portuguese, speak Portuguese, transcript and answer both
+come back in Portuguese.
+
+**Wiring verified, the speaking half is manual.** The Deepgram URL, the prompt
+line, and the allow-list are all under test. **Needs a real key and a human
+speaking Portuguese to close.**
+
+### 9c — Coding mode and Markdown rendering
+
+- [x] Answers render through `react-markdown` with fenced, copyable code blocks
+- [x] A screenshot switches to a coding system prompt — approach, code, complexity, edge cases
+- [x] `coding-max-tokens: 2048`, because 1024 truncates a function halfway through
+- [x] Copy buttons on code blocks and on the whole answer
+
+**Coding mode is the screenshot path, not a toggle.** That is where a LeetCode
+problem comes from, and a separate mode switch would be configurability nobody
+asked for. Someone in a coding call where the problem is read aloud has the ask
+bar.
+
+> **Two prompts means two cached prefixes, and that is not a bug.** With the
+> one-hour TTL both stay warm after first use, so alternating costs one cold
+> write each and nothing after. A zero `cacheReadInputTokens` on the first
+> screenshot of a session is that write.
+
+**Copy goes through Electron's clipboard, not `navigator.clipboard`**, which
+needs a secure context the packaged `file://` build does not have — exactly the
+kind of thing that works in dev and fails once installed.
+
+**Exit criterion:** screenshot a LeetCode problem, get a fenced, monospaced,
+copyable code block with complexity analysis, not truncated.
+
+**Request shape verified; the answer needs a key.** The 2048 ceiling is asserted
+on the wire, and the two prompts are asserted not to share a prefix. **Whether
+the code is correct needs `ANTHROPIC_API_KEY`.**
+
+### 9d — Post-call notes
+
+- [x] `session_summaries` table (migration `20260801100000`)
+- [x] `GET /v1/sessions/{id}/summary` — generates on first call, then serves from storage
+- [x] Shown in the History detail screen and included in the Markdown export, above the transcript
+- [x] `409` rather than a billed call for a session with nothing in it
+
+**Stored, unlike the practice report.** That route regenerates its themes on
+every view, which this file already flags as re-billing a model call to read a
+page; a recap is read far more often than it is produced. `key_points` and
+`action_items` are `text[]` rather than `jsonb` because Spring Data JDBC maps
+Postgres arrays with no custom converter, and nothing ever queries inside them.
+Written with `JdbcAggregateTemplate.insert` rather than `save`: the id *is* the
+session id and is therefore never null, so `save` would issue an UPDATE against
+a row that does not exist.
+
+**Exit criterion:** finish a session, open History, see a recap with key points
+and action items; reopening it makes no second model call.
+
+**Rendering and prompt verified; the round trip needs the database.** See the
+note below.
+
+### Cross-cutting
+
+- [x] Auto-scroll on both panes, but only while the reader has not scrolled away
+- [x] `README.md` and this file updated; version `0.9.0` in both `package.json`s and `pom.xml`
+
+### What is not verified, and why
+
+**The database-backed tests did not run on this machine.** Windows has reserved
+TCP `54267–54366` (`netsh interface ipv4 show excludedportrange`), which swallows
+Supabase's `54322`, so `supabase start` cannot bind Postgres. Freeing it is
+`net stop winnat && net start winnat` from an elevated prompt, or changing the
+port in `supabase/config.toml`.
+
+What that leaves unproven, specifically:
+
+- **Both new migrations have never been applied.** `20260801090000_user_language`
+  and `20260801100000_session_summaries`.
+- **The `text[]` mapping.** `String[]` ↔ Postgres `text[]` through Spring Data
+  JDBC is the single most likely thing in this phase to need a converter after
+  all. It compiles; it has not round-tripped.
+- **`ProfileRepository`'s `@Query` methods**, and that `PreferencesService` falls
+  back to English when the row cannot be read.
+- **`SummaryService`'s generate-once behaviour**, including the `DuplicateKeyException`
+  path when two clients open the panel at once.
+
+Everything not touching the database is green: **102 Java tests** across the
+DB-free suites (`Language`, `Summary`, `PromptAssembler`, `PracticePrompts`,
+`Deepgram`, both engines, `ContractFixtures`, `TurnDetector`,
+`TranscriptRingBuffer`) and **205 TypeScript tests** (21 protocol + 184
+desktop).
+
+---
+
 ## Summary
 
 | Phase | Deliverable                         | Language | Est.         | Risk        |
@@ -556,7 +717,8 @@ Not covered, and worth being plain about:
 | 6     | Practice mode                       | both     | 1–2 d        | Low         |
 | 7     | History and review                  | both     | 1 d          | Low         |
 | 8     | Installer + deployed backend        | both     | 1–2 d        | Medium      |
-|       | **Total**                           |          | **~12–16 d** |             |
+| 9     | Ask bar · language · coding · notes | both     | 2–3 d        | Low         |
+|       | **Total**                           |          | **~14–19 d** |             |
 
 **Minimum demoable product:** Phases 0–4. Phases 5–8 make it a product someone else can use.
 

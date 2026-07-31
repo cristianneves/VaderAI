@@ -60,8 +60,12 @@ describe('HOTKEYS', () => {
     expect(new Set(accelerators).size).toBe(accelerators.length);
   });
 
-  it('covers all five documented actions', () => {
+  it('covers every documented action', () => {
     const types = new Set(HOTKEYS.map((h) => h.action.type));
-    expect(types).toEqual(new Set(['toggle', 'ask', 'screenshot', 'clear', 'move']));
+    expect(types).toEqual(new Set(['toggle', 'ask', 'compose', 'screenshot', 'clear', 'move']));
+  });
+
+  it('binds the ask bar to Ctrl+K', () => {
+    expect(HOTKEYS.find((h) => h.action.type === 'compose')?.accelerator).toBe('Control+K');
   });
 });

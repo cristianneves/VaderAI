@@ -48,3 +48,25 @@ export function moveOverlay(window: BrowserWindow, dx: number, dy: number): void
   const [x = 0, y = 0] = window.getPosition();
   window.setPosition(x + dx, y + dy);
 }
+
+/**
+ * Lends the overlay keyboard focus for as long as the ask bar is open.
+ *
+ * `focusable: false` maps to `WS_EX_NOACTIVATE` on Windows, which is what stops
+ * the overlay stealing focus from the meeting — and also what stops a text
+ * field ever receiving a keystroke. So focus is borrowed rather than kept:
+ * granted when the composer opens, handed straight back when it closes, so the
+ * meeting window is active again for everything except the moment the user is
+ * deliberately typing at us.
+ */
+export function setComposing(window: BrowserWindow, composing: boolean): void {
+  if (composing) {
+    window.setFocusable(true);
+    window.focus();
+    return;
+  }
+  // Blur first: dropping focusability while still focused leaves Windows with
+  // no active window rather than returning to the meeting.
+  window.blur();
+  window.setFocusable(false);
+}

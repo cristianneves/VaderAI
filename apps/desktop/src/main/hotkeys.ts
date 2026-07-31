@@ -7,6 +7,7 @@ export const MOVE_STEP_PX = 40;
 export const HOTKEYS: ReadonlyArray<{ accelerator: string; action: OverlayAction }> = [
   { accelerator: 'Control+`', action: { type: 'toggle' } },
   { accelerator: 'Control+Enter', action: { type: 'ask' } },
+  { accelerator: 'Control+K', action: { type: 'compose' } },
   { accelerator: 'Control+H', action: { type: 'screenshot' } },
   { accelerator: 'Control+Shift+C', action: { type: 'clear' } },
   { accelerator: 'Control+Shift+Up', action: { type: 'move', dx: 0, dy: -MOVE_STEP_PX } },

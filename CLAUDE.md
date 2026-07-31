@@ -64,3 +64,11 @@ These guidelines are working if you notice:
 * Fewer unnecessary changes in diffs
 * Fewer rewrites due to overcomplication
 * Clarifying questions coming **before** implementation rather than after mistakes
+
+- Always create test cases for the generated code both positive and negative.
+- Minimize the amount of code generated.
+- Update README.md each time you generate a new version.
+- When needed to implement a new feature, go to main branch and pull the latest changes and then create a new branch from it, do the necesseries commits while developing, test the feature and push it to a remote branch.
+- Always ask me questions to get more context if you think that you need more information to complete the task or make a better implementation.
+- When I ask for a .md file, always put it in /docs.
+- Always when you finish some task on a .md mark them as completed.

@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { fetchQuestions } from '../practice/api';
 import type { PracticeQuestion } from '../practice/practice';
-import { deleteSession, fetchSession, fetchSessions } from './api';
+import { deleteSession, fetchSession, fetchSessions, fetchSummary } from './api';
 import {
   describeSession,
   exportFileName,
   speakerLabel,
   timelineOf,
   type SessionDetail,
+  type SessionRecap,
   type SessionSummary,
 } from './history';
 import { toMarkdown } from './markdown';
@@ -22,6 +23,7 @@ export function HistoryPanel({ accessToken, onClose }: Props): React.JSX.Element
   const [open, setOpen] = useState<SessionSummary | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [questions, setQuestions] = useState<PracticeQuestion[]>([]);
+  const [recap, setRecap] = useState<SessionRecap | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [exported, setExported] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -60,7 +62,16 @@ export function HistoryPanel({ accessToken, onClose }: Props): React.JSX.Element
     setOpen(null);
     setDetail(null);
     setQuestions([]);
+    setRecap(null);
     setConfirming(null);
+  }
+
+  /**
+   * On demand rather than with the detail: the first call bills a model, and
+   * scrolling past an old session should not cost anything.
+   */
+  function loadRecap(id: string): void {
+    void run(async () => setRecap(await fetchSummary(accessToken, id)));
   }
 
   function remove(id: string): void {
@@ -76,7 +87,7 @@ export function HistoryPanel({ accessToken, onClose }: Props): React.JSX.Element
     void run(async () => {
       const path = await window.vader.exportMarkdown(
         exportFileName(open),
-        toMarkdown(open, detail, questions),
+        toMarkdown(open, detail, questions, recap),
       );
       // Null means the user cancelled the dialog, which is not an error.
       if (path !== null) setExported(path);
@@ -92,6 +103,37 @@ export function HistoryPanel({ accessToken, onClose }: Props): React.JSX.Element
           <span className="pill">{describeSession(open)}</span>
           <button onClick={back}>Back</button>
         </header>
+
+        {open.kind === 'live' &&
+          (recap === null ? (
+            <button className="chip" disabled={busy || detail === null} onClick={() => loadRecap(open.id)}>
+              {busy ? 'Writing recap…' : 'Recap this session'}
+            </button>
+          ) : (
+            <div className="recap">
+              <p className="answer-text">{recap.summary}</p>
+              {recap.keyPoints.length > 0 && (
+                <>
+                  <h3>Key points</h3>
+                  <ul>
+                    {recap.keyPoints.map((point, index) => (
+                      <li key={index}>{point}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {recap.actionItems.length > 0 && (
+                <>
+                  <h3>Action items</h3>
+                  <ul>
+                    {recap.actionItems.map((item, index) => (
+                      <li key={index}>{item}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          ))}
 
         {open.kind === 'practice' ? (
           questions.length === 0 ? (

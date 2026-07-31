@@ -112,13 +112,27 @@ export class SessionSocket {
     this.socket.send(frame.buffer as ArrayBuffer);
   }
 
-  /** Asks for an answer from whatever transcript the server already has. */
-  ask(): void {
-    this.sendJson({ type: 'ask', trigger: 'manual' });
+  /**
+   * Asks for an answer. With no question the server answers the interviewer's
+   * most recent turn, which is what the bare Ctrl+Enter does; with one it
+   * answers that instead, and can see the answers it already gave.
+   */
+  ask(question?: string): void {
+    const trimmed = question?.trim();
+    this.sendJson(
+      trimmed === undefined || trimmed === ''
+        ? { type: 'ask', trigger: 'manual' }
+        : { type: 'ask', trigger: 'manual', question: trimmed },
+    );
   }
 
-  askAboutScreen(shot: { mimeType: 'image/png'; dataBase64: string }): void {
-    this.sendJson({ type: 'screenshot', ...shot });
+  askAboutScreen(shot: { mimeType: 'image/png'; dataBase64: string }, note?: string): void {
+    const trimmed = note?.trim();
+    this.sendJson(
+      trimmed === undefined || trimmed === ''
+        ? { type: 'screenshot', ...shot }
+        : { type: 'screenshot', ...shot, note: trimmed },
+    );
   }
 
   private sendJson(message: ClientMessage): void {

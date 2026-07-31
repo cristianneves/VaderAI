@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { registerDisplayMediaHandler } from './display-media';
 import { registerExportHandler } from './export';
 import { registerHotkeys } from './hotkeys';
-import { createOverlayWindow, moveOverlay, toggleOverlay } from './overlay-window';
+import { createOverlayWindow, moveOverlay, setComposing, toggleOverlay } from './overlay-window';
 import { startReporting } from './reporter';
 import { captureScreen } from './screenshot';
 import { captureProtectionNotice, checkCaptureProtection } from './windows-support';
@@ -21,6 +21,13 @@ function handleAction(window: BrowserWindow, action: OverlayAction): void {
       break;
     case 'move':
       moveOverlay(window, action.dx, action.dy);
+      break;
+    case 'compose':
+      // Focus has to be granted before the renderer mounts the input, or the
+      // field takes no keystrokes.
+      if (!window.isVisible()) window.showInactive();
+      setComposing(window, true);
+      window.webContents.send('overlay:action', action);
       break;
     default:
       // ask / screenshot / clear are renderer concerns; they get real handlers
@@ -51,6 +58,10 @@ void app.whenReady().then(() => {
   }
 
   ipcMain.handle('overlay:screenshot', () => captureScreen());
+
+  // The renderer hands focus back when the ask bar closes — on submit, on
+  // Escape, or on clicking away.
+  ipcMain.on('overlay:composing', (_event, composing: boolean) => setComposing(window, composing));
 
   // Phase 2 debug utility: the renderer hands over a finished WAV, we only
   // put it somewhere the user can open it.

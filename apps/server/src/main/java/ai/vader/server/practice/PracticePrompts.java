@@ -1,5 +1,6 @@
 package ai.vader.server.practice;
 
+import ai.vader.server.preferences.Language;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -40,14 +41,31 @@ final class PracticePrompts {
             punctuation, or a word that was obviously misheard.\
             """;
 
-    /** Stable system blocks. The last one carries the cache breakpoint downstream. */
-    static List<String> cachedBlocks(String knowledgeBase) {
+    /**
+     * Stable system blocks. The last one carries the cache breakpoint downstream.
+     *
+     * <p>The language belongs here rather than in the per-task instruction: it is
+     * constant for a session, so it caches with the rest of the prefix instead of
+     * being re-sent on all seven calls.
+     */
+    static List<String> cachedBlocks(String knowledgeBase, Language language) {
         List<String> blocks = new ArrayList<>();
-        blocks.add(SYSTEM_PROMPT);
+        blocks.add(SYSTEM_PROMPT + languageInstruction(language));
         if (knowledgeBase != null && !knowledgeBase.isBlank()) {
             blocks.add("Background on the candidate, and the role:\n\n" + knowledgeBase.strip());
         }
         return List.copyOf(blocks);
+    }
+
+    /**
+     * Grading someone's Portuguese answer and handing back English feedback is
+     * the obvious way to get this half-right, so questions, feedback and
+     * rewrites are all pinned to the same language the session is transcribed in.
+     */
+    private static String languageInstruction(Language language) {
+        return language == Language.MULTI
+                ? "\n\nWrite the questions, the feedback and the rewrites in the language the candidate is speaking."
+                : "\n\nWrite the questions, the feedback and the rewrites in " + language.englishName() + ".";
     }
 
     static String questionSetPrompt(int count) {

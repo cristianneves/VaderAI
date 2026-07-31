@@ -44,9 +44,18 @@ export const helloSchema = z.object({
   accessToken: z.string().min(1),
 });
 
+/** Ceiling on a typed question. Long enough to paste a problem statement. */
+export const MAX_QUESTION_CHARS = 2000;
+
+/**
+ * `question` is what the user typed in the ask bar. Absent means "answer the
+ * interviewer's most recent question from the transcript", which is what the
+ * auto-trigger and the bare Ctrl+Enter both do.
+ */
 export const askSchema = z.object({
   type: z.literal('ask'),
   trigger: z.enum(['manual', 'auto']),
+  question: z.string().min(1).max(MAX_QUESTION_CHARS).optional(),
 });
 
 export const screenshotSchema = z.object({

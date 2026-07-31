@@ -4,6 +4,7 @@ import {
   speakerLabel,
   timelineOf,
   type SessionDetail,
+  type SessionRecap,
   type SessionSummary,
 } from './history';
 
@@ -24,6 +25,7 @@ export function toMarkdown(
   summary: SessionSummary,
   detail: SessionDetail,
   practiceQuestions: PracticeQuestion[] = [],
+  recap: SessionRecap | null = null,
 ): string {
   const lines: string[] = [];
   const kind = summary.kind === 'practice' ? 'Practice session' : 'Session';
@@ -34,6 +36,10 @@ export function toMarkdown(
   lines.push(`Duration: ${formatDuration(summary.startedAt, summary.endedAt)}`);
   lines.push('');
 
+  // Above the transcript: it is what someone reading this a week later
+  // actually wants, and the transcript is the appendix.
+  if (recap !== null) lines.push(...recapSection(recap));
+
   if (summary.kind === 'practice') {
     lines.push(...practiceSection(practiceQuestions));
   } else {
@@ -41,6 +47,23 @@ export function toMarkdown(
   }
 
   return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function recapSection(recap: SessionRecap): string[] {
+  const lines = ['## Recap', '', recap.summary, ''];
+  // Empty lists are meaningful — the prompt says to return them rather than
+  // pad — so an absent heading is the honest rendering, not a missing one.
+  if (recap.keyPoints.length > 0) {
+    lines.push('### Key points', '');
+    lines.push(...recap.keyPoints.map((point) => `- ${point}`));
+    lines.push('');
+  }
+  if (recap.actionItems.length > 0) {
+    lines.push('### Action items', '');
+    lines.push(...recap.actionItems.map((item) => `- [ ] ${item}`));
+    lines.push('');
+  }
+  return lines;
 }
 
 function transcriptSection(detail: SessionDetail): string[] {

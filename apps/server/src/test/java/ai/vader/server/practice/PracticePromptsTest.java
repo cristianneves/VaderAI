@@ -2,12 +2,17 @@ package ai.vader.server.practice;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ai.vader.server.preferences.Language;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class PracticePromptsTest {
 
     private static final String BACKGROUND = "Job description:\nstaff engineer, payments";
+
+    private static List<String> cachedBlocks(String background) {
+        return PracticePrompts.cachedBlocks(background, Language.ENGLISH);
+    }
 
     private static PracticeQuestion graded(int position, String question, String answer, int structure) {
         return PracticeQuestion.asked(java.util.UUID.randomUUID(), java.util.UUID.randomUUID(), position, question)
@@ -16,18 +21,33 @@ class PracticePromptsTest {
 
     @Test
     void putsTheSystemPromptAndBackgroundInTheCachedPrefix() {
-        List<String> blocks = PracticePrompts.cachedBlocks(BACKGROUND);
+        List<String> blocks = cachedBlocks(BACKGROUND);
 
         assertThat(blocks).hasSize(2);
-        assertThat(blocks.get(0)).isEqualTo(PracticePrompts.SYSTEM_PROMPT);
+        assertThat(blocks.get(0)).startsWith(PracticePrompts.SYSTEM_PROMPT);
         assertThat(blocks.get(1)).contains("staff engineer, payments");
     }
 
     @Test
+    void gradesAndRewritesComeBackInTheSessionLanguage() {
+        // Grading a Portuguese answer and replying in English is the obvious way
+        // to get half a translation.
+        var blocks = PracticePrompts.cachedBlocks(BACKGROUND, Language.PORTUGUESE);
+
+        assertThat(blocks.get(0)).endsWith("in Brazilian Portuguese.");
+    }
+
+    @Test
+    void differentLanguagesDoNotShareACachedPrefix() {
+        assertThat(PracticePrompts.cachedBlocks(BACKGROUND, Language.PORTUGUESE))
+                .isNotEqualTo(PracticePrompts.cachedBlocks(BACKGROUND, Language.ENGLISH));
+    }
+
+    @Test
     void omitsTheBackgroundBlockWhenThereIsNone() {
-        assertThat(PracticePrompts.cachedBlocks("")).hasSize(1);
-        assertThat(PracticePrompts.cachedBlocks("   ")).hasSize(1);
-        assertThat(PracticePrompts.cachedBlocks(null)).hasSize(1);
+        assertThat(cachedBlocks("")).hasSize(1);
+        assertThat(cachedBlocks("   ")).hasSize(1);
+        assertThat(cachedBlocks(null)).hasSize(1);
     }
 
     @Test
@@ -35,16 +55,16 @@ class PracticePromptsTest {
         // The prefix is a cache key in all but name. One changed byte here means a
         // cold cache for every call that follows, with no symptom but a zero
         // cache-read count.
-        assertThat(PracticePrompts.cachedBlocks(BACKGROUND)).isEqualTo(PracticePrompts.cachedBlocks(BACKGROUND));
+        assertThat(cachedBlocks(BACKGROUND)).isEqualTo(cachedBlocks(BACKGROUND));
     }
 
     @Test
     void keepsEveryTaskOnTheSameCachedPrefix() {
         // Generating, grading, and summarising all share one prefix, so the five
         // grades in a run are cache reads rather than five cold writes.
-        List<String> blocks = PracticePrompts.cachedBlocks(BACKGROUND);
+        List<String> blocks = cachedBlocks(BACKGROUND);
 
-        assertThat(blocks).isEqualTo(PracticePrompts.cachedBlocks(BACKGROUND));
+        assertThat(blocks).isEqualTo(cachedBlocks(BACKGROUND));
         assertThat(blocks.toString()).doesNotContain("Grade this answer");
         assertThat(blocks.toString()).doesNotContain("interview questions for this role");
     }

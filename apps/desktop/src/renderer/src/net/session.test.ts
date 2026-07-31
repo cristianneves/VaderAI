@@ -135,6 +135,67 @@ describe('SessionSocket', () => {
     expect((socket.sent[1] as ArrayBuffer).byteLength).toBe(6400);
   });
 
+  /** Connects, opens and readies a session, returning both halves. */
+  const live = (): { session: SessionSocket; socket: FakeSocket } => {
+    const session = build();
+    session.connect('token-abc');
+    const socket = FakeSocket.instances[0]!;
+    socket.open();
+    ready(socket);
+    return { session, socket };
+  };
+
+  it('asks with no question, which answers the interviewer instead', () => {
+    const { session, socket } = live();
+
+    session.ask();
+
+    expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({ type: 'ask', trigger: 'manual' });
+  });
+
+  it('carries a typed question', () => {
+    const { session, socket } = live();
+
+    session.ask('Explain that more simply.');
+
+    expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({
+      type: 'ask',
+      trigger: 'manual',
+      question: 'Explain that more simply.',
+    });
+  });
+
+  it('trims a question and omits one that was only whitespace', () => {
+    const { session, socket } = live();
+
+    session.ask('  padded  ');
+    expect(JSON.parse(socket.sent.at(-1) as string).question).toBe('padded');
+
+    session.ask('   ');
+    expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({ type: 'ask', trigger: 'manual' });
+  });
+
+  it('sends a screenshot note when there is one, and omits the field when not', () => {
+    const { session, socket } = live();
+    const shot = { mimeType: 'image/png', dataBase64: 'AAAA' } as const;
+
+    session.askAboutScreen(shot);
+    expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({ type: 'screenshot', ...shot });
+
+    session.askAboutScreen(shot, 'What is the complexity?');
+    expect(JSON.parse(socket.sent.at(-1) as string).note).toBe('What is the complexity?');
+  });
+
+  it('drops an ask sent before the server is ready', () => {
+    const session = build();
+    session.connect('token-abc');
+    FakeSocket.instances[0]!.open();
+
+    session.ask('anything');
+
+    expect(FakeSocket.instances[0]!.sent).toHaveLength(1); // hello only
+  });
+
   it('reconnects after an unexpected close and authenticates again', () => {
     const session = build();
     session.connect('token-abc');

@@ -32,6 +32,7 @@ public final class DeepgramSttProvider implements SttProvider {
     private final OkHttpClient http;
     private final ObjectMapper json;
     private final DeepgramProperties properties;
+    private final String languageCode;
 
     private final AtomicReference<WebSocket> socket = new AtomicReference<>();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -39,10 +40,21 @@ public final class DeepgramSttProvider implements SttProvider {
     private volatile Listener listener;
     private volatile int attempt;
 
-    DeepgramSttProvider(OkHttpClient http, ObjectMapper json, DeepgramProperties properties) {
+    DeepgramSttProvider(OkHttpClient http, ObjectMapper json, DeepgramProperties properties, String languageCode) {
         this.http = http;
         this.json = json;
         this.properties = properties;
+        this.languageCode = languageCode;
+    }
+
+    /**
+     * The language is appended rather than baked into {@link #PARAMS} because it
+     * is the one parameter that varies per session. It is validated against
+     * {@code preferences.Language} before it gets here — nothing user-supplied
+     * is interpolated into this URL.
+     */
+    String requestUrl() {
+        return properties.url() + PARAMS + "&language=" + languageCode;
     }
 
     @Override
@@ -53,7 +65,7 @@ public final class DeepgramSttProvider implements SttProvider {
 
     private void connect() {
         var request = new Request.Builder()
-                .url(properties.url() + PARAMS)
+                .url(requestUrl())
                 .header("Authorization", "Token " + properties.apiKey())
                 .build();
         socket.set(http.newWebSocket(request, new DeepgramListener()));

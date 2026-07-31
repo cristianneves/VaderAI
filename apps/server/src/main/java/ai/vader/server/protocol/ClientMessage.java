@@ -23,7 +23,8 @@ public sealed interface ClientMessage {
     /** First frame after connect. See {@code SessionWebSocketHandler} for why. */
     record Hello(int protocolVersion, String accessToken) implements ClientMessage {}
 
-    record Ask(Trigger trigger) implements ClientMessage {}
+    /** {@code question} is what the user typed in the ask bar; null on an auto-trigger. */
+    record Ask(Trigger trigger, String question) implements ClientMessage {}
 
     record Screenshot(String mimeType, String dataBase64, String note) implements ClientMessage {}
 

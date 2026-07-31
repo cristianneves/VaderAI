@@ -5,6 +5,7 @@ import ai.vader.server.persistence.AnswerTrigger;
 import ai.vader.server.persistence.SessionKind;
 import ai.vader.server.persistence.SessionRow;
 import ai.vader.server.persistence.TranscriptTurn;
+import ai.vader.server.summary.SummaryService;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -13,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,9 +41,11 @@ import org.springframework.web.server.ResponseStatusException;
 class SessionHistoryController {
 
     private final TranscriptService transcripts;
+    private final SummaryService summaries;
 
-    SessionHistoryController(TranscriptService transcripts) {
+    SessionHistoryController(TranscriptService transcripts, SummaryService summaries) {
         this.transcripts = transcripts;
+        this.summaries = summaries;
     }
 
     /**
@@ -119,6 +123,20 @@ class SessionHistoryController {
                 transcripts.answersOf(sessionId, userId).stream()
                         .map(AnswerView::of)
                         .toList());
+    }
+
+    /**
+     * The recap. Generated on the first call and stored, so reopening it later
+     * is a select rather than another model call.
+     */
+    @GetMapping("/{sessionId}/summary")
+    SummaryService.Recap summary(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
+        return summaries.recapOf(sessionId, userIdOf(jwt));
+    }
+
+    @ExceptionHandler(SummaryService.EmptySessionException.class)
+    ResponseEntity<String> onEmptySession(SummaryService.EmptySessionException failed) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(failed.getMessage());
     }
 
     /** The database cascade removes the turns, answers, and practice questions. */

@@ -41,6 +41,16 @@ class ContractFixturesTest {
     void askFixtureDeserializes() throws Exception {
         var ask = (ClientMessage.Ask) read("client.json", "ask", ClientMessage.class);
         assertThat(ask.trigger()).isEqualTo(ClientMessage.Trigger.MANUAL);
+        assertThat(ask.question()).isEqualTo("Explain that last answer more simply.");
+    }
+
+    @Test
+    void anAskWithNoQuestionStillDeserializes() throws Exception {
+        // What the auto-trigger and a bare Ctrl+Enter send.
+        var ask = (ClientMessage.Ask) json.readValue("{\"type\":\"ask\",\"trigger\":\"auto\"}", ClientMessage.class);
+
+        assertThat(ask.trigger()).isEqualTo(ClientMessage.Trigger.AUTO);
+        assertThat(ask.question()).isNull();
     }
 
     @Test

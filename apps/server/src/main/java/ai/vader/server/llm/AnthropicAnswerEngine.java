@@ -162,15 +162,21 @@ public class AnthropicAnswerEngine implements AnswerEngine {
         content.add(ContentBlockParam.ofText(
                 TextBlockParam.builder().text(request.conversation()).build()));
 
-        return MessageCreateParams.builder()
+        var params = MessageCreateParams.builder()
                 .model(properties.model())
-                .maxTokens(properties.maxTokens())
+                .maxTokens(properties.maxTokensFor(request.mode()))
                 .systemOfTextBlockParams(system)
-                .addUserMessageOfBlockParams(content)
                 .outputConfig(OutputConfig.builder()
                         .effort(OutputConfig.Effort.LOW)
-                        .build())
-                .build();
+                        .build());
+        // Replayed as real turns rather than narrated inside the user message:
+        // "explain that more simply" needs the previous answer to be something
+        // the model said, not something it is being told it said.
+        for (AnswerRequest.Exchange exchange : request.priorExchanges()) {
+            params.addUserMessage(exchange.asked());
+            params.addAssistantMessage(exchange.answer());
+        }
+        return params.addUserMessageOfBlockParams(content).build();
     }
 
     private com.anthropic.models.beta.messages.MessageCreateParams betaParams(AnswerRequest request) {
@@ -195,17 +201,20 @@ public class AnthropicAnswerEngine implements AnswerEngine {
         content.add(BetaContentBlockParam.ofText(
                 BetaTextBlockParam.builder().text(request.conversation()).build()));
 
-        return com.anthropic.models.beta.messages.MessageCreateParams.builder()
+        var params = com.anthropic.models.beta.messages.MessageCreateParams.builder()
                 .model(properties.model())
-                .maxTokens(properties.maxTokens())
+                .maxTokens(properties.maxTokensFor(request.mode()))
                 .addBeta(AnthropicBeta.FAST_MODE_2026_02_01)
                 .speed(com.anthropic.models.beta.messages.MessageCreateParams.Speed.FAST)
                 .systemOfBetaTextBlockParams(system)
-                .addUserMessageOfBetaContentBlockParams(content)
                 .outputConfig(BetaOutputConfig.builder()
                         .effort(BetaOutputConfig.Effort.LOW)
-                        .build())
-                .build();
+                        .build());
+        for (AnswerRequest.Exchange exchange : request.priorExchanges()) {
+            params.addUserMessage(exchange.asked());
+            params.addAssistantMessage(exchange.answer());
+        }
+        return params.addUserMessageOfBetaContentBlockParams(content).build();
     }
 
     private static AnswerUsage usageOf(Message message) {
