@@ -42,6 +42,7 @@ public sealed interface ServerMessage {
         STT_FAILED,
         LLM_FAILED,
         BAD_REQUEST,
+        RATE_LIMITED,
         INTERNAL;
 
         @JsonValue

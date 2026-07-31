@@ -17,6 +17,15 @@ describe('severityOf', () => {
     expect(severityOf('internal')).toBe('bug');
   });
 
+  it('treats the hourly cap as transient — waiting is what fixes it', () => {
+    expect(severityOf('rate_limited')).toBe('transient');
+  });
+
+  it('never reports the hourly cap as fatal or as a bug — the user did nothing wrong', () => {
+    expect(severityOf('rate_limited')).not.toBe('fatal');
+    expect(severityOf('rate_limited')).not.toBe('bug');
+  });
+
   it('never reports a provider failure as fatal — that would strand a live session', () => {
     expect(severityOf('stt_failed')).not.toBe('fatal');
     expect(severityOf('llm_failed')).not.toBe('fatal');

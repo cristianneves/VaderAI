@@ -48,6 +48,13 @@ export const helloSchema = z.object({
 export const MAX_QUESTION_CHARS = 2000;
 
 /**
+ * Interview mode answers in the user's voice, out loud. Coding mode gives an
+ * approach, then code, then complexity. Absent means interview, so a client
+ * that predates this field still validates and PROTOCOL_VERSION stays 1.
+ */
+export const askModeSchema = z.enum(['interview', 'coding']);
+
+/**
  * `question` is what the user typed in the ask bar. Absent means "answer the
  * interviewer's most recent question from the transcript", which is what the
  * auto-trigger and the bare Ctrl+Enter both do.
@@ -56,12 +63,25 @@ export const askSchema = z.object({
   type: z.literal('ask'),
   trigger: z.enum(['manual', 'auto']),
   question: z.string().min(1).max(MAX_QUESTION_CHARS).optional(),
+  mode: askModeSchema.optional(),
 });
+
+/**
+ * Ceiling on an encoded screen grab: 256 KiB of base64, so 192 KiB of image.
+ *
+ * A screenshot travels as one WebSocket *text* frame, and the container caps
+ * those — see `maxTextMessageBufferSize` in `WebSocketConfig`, which must stay
+ * above this plus the JSON envelope. Exceeding the container limit closes the
+ * connection with 1009 and no error frame, so the ceiling is enforced here, in
+ * the main process before send, and again on the server: a screen that will
+ * not fit has to come back as a sentence, not a dropped session.
+ */
+export const MAX_SCREENSHOT_BASE64_CHARS = 262_144;
 
 export const screenshotSchema = z.object({
   type: z.literal('screenshot'),
-  mimeType: z.literal('image/png'),
-  dataBase64: z.string().min(1),
+  mimeType: z.union([z.literal('image/png'), z.literal('image/jpeg')]),
+  dataBase64: z.string().min(1).max(MAX_SCREENSHOT_BASE64_CHARS),
   note: z.string().optional(),
 });
 
@@ -77,6 +97,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
 ]);
 
 export type Hello = z.infer<typeof helloSchema>;
+export type AskMode = z.infer<typeof askModeSchema>;
 export type Ask = z.infer<typeof askSchema>;
 export type Screenshot = z.infer<typeof screenshotSchema>;
 export type Ping = z.infer<typeof pingSchema>;
@@ -114,7 +135,14 @@ export const answerEndSchema = z.object({
 
 export const errorSchema = z.object({
   type: z.literal('error'),
-  code: z.enum(['unauthorized', 'stt_failed', 'llm_failed', 'bad_request', 'internal']),
+  code: z.enum([
+    'unauthorized',
+    'stt_failed',
+    'llm_failed',
+    'bad_request',
+    'rate_limited',
+    'internal',
+  ]),
   message: z.string(),
 });
 

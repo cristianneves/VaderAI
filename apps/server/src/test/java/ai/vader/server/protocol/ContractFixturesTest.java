@@ -42,6 +42,15 @@ class ContractFixturesTest {
         var ask = (ClientMessage.Ask) read("client.json", "ask", ClientMessage.class);
         assertThat(ask.trigger()).isEqualTo(ClientMessage.Trigger.MANUAL);
         assertThat(ask.question()).isEqualTo("Explain that last answer more simply.");
+        assertThat(ask.mode()).isEqualTo(ClientMessage.Mode.INTERVIEW);
+    }
+
+    @Test
+    void aCodingAskDeserializes() throws Exception {
+        var ask = (ClientMessage.Ask)
+                json.readValue("{\"type\":\"ask\",\"trigger\":\"manual\",\"mode\":\"coding\"}", ClientMessage.class);
+
+        assertThat(ask.mode()).isEqualTo(ClientMessage.Mode.CODING);
     }
 
     @Test
@@ -51,6 +60,16 @@ class ContractFixturesTest {
 
         assertThat(ask.trigger()).isEqualTo(ClientMessage.Trigger.AUTO);
         assertThat(ask.question()).isNull();
+        // Null rather than a default: the handler is what decides that silence
+        // means interview, and it should be the only place that decides it.
+        assertThat(ask.mode()).isNull();
+    }
+
+    @Test
+    void anUnknownAskModeIsRejected() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> json.readValue(
+                        "{\"type\":\"ask\",\"trigger\":\"auto\",\"mode\":\"smart\"}", ClientMessage.class))
+                .isInstanceOf(Exception.class);
     }
 
     @Test
@@ -58,6 +77,17 @@ class ContractFixturesTest {
         var shot = (ClientMessage.Screenshot) read("client.json", "screenshot", ClientMessage.class);
         assertThat(shot.mimeType()).isEqualTo("image/png");
         assertThat(shot.dataBase64()).isNotBlank();
+    }
+
+    @Test
+    void aJpegScreenshotDeserializes() throws Exception {
+        // What the desktop app actually sends since Phase 12a; the PNG arm stays
+        // in the union so an older client still validates.
+        var shot = (ClientMessage.Screenshot) json.readValue(
+                "{\"type\":\"screenshot\",\"mimeType\":\"image/jpeg\",\"dataBase64\":\"/9j/4AAQ\"}",
+                ClientMessage.class);
+
+        assertThat(shot.mimeType()).isEqualTo("image/jpeg");
     }
 
     @Test
@@ -117,6 +147,17 @@ class ContractFixturesTest {
                 new ServerMessage.Failure(ServerMessage.ErrorCode.STT_FAILED, "gone"));
         assertThat(failure.get("type").asText()).isEqualTo("error");
         assertThat(failure.get("code").asText()).isEqualTo("stt_failed");
+
+        JsonNode limited = json.valueToTree(
+                new ServerMessage.Failure(ServerMessage.ErrorCode.RATE_LIMITED, "slow down"));
+        assertThat(limited.get("code").asText()).isEqualTo("rate_limited");
+    }
+
+    @Test
+    void anUnknownErrorCodeIsRejected() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> json.readValue(
+                        "{\"type\":\"error\",\"code\":\"teapot\",\"message\":\"x\"}", ServerMessage.class))
+                .isInstanceOf(Exception.class);
     }
 
     @Test
