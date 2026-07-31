@@ -3,6 +3,7 @@ package ai.vader.server.session;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -10,6 +11,7 @@ import static org.mockito.Mockito.verify;
 
 import ai.vader.server.llm.AnswerEngine;
 import ai.vader.server.llm.AnswerMode;
+import ai.vader.server.limit.ModelCallLimiter;
 import ai.vader.server.llm.AnswerRequest;
 import ai.vader.server.persistence.Answer;
 import ai.vader.server.persistence.AnswerTrigger;
@@ -70,6 +72,9 @@ class SessionWebSocketHandlerTest {
     @MockitoBean
     private AnswerEngine answerEngine;
 
+    @MockitoBean
+    private ModelCallLimiter limits;
+
     private final List<ByteBuffer> audioSentToStt = new CopyOnWriteArrayList<>();
 
     /** Replays two deltas and finishes, as a successful answer would. */
@@ -97,6 +102,8 @@ class SessionWebSocketHandlerTest {
 
     @BeforeEach
     void stubCollaborators() {
+        // Permissive by default; the two limit tests below flip it.
+        given(limits.tryAcquire(any(), anyLong())).willReturn(true);
         given(jwtDecoder.decode(GOOD_TOKEN))
                 .willReturn(Jwt.withTokenValue(GOOD_TOKEN)
                         .header("alg", "ES256")
@@ -328,6 +335,43 @@ class SessionWebSocketHandlerTest {
                         == 2);
 
         verify(transcripts, never()).saveAnswer(any());
+    }
+
+    @Test
+    void anAskOverTheHourlyLimitIsRefusedAndCostsNoModelCall() throws Exception {
+        var client = authenticated();
+        given(limits.tryAcquire(any(), anyLong())).willReturn(false);
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"code\":\"rate_limited\"")));
+        verify(answerEngine, never()).stream(any(), any());
+        // No phantom answer either: the overlay would sit on "Thinking..." forever.
+        assertThat(client.messages).noneMatch(m -> m.contains("\"type\":\"answer_start\""));
+    }
+
+    /**
+     * The ordering guard. The limit check has to run before cancelInFlight, or
+     * hitting the cap would wipe the answer the user is still reading.
+     */
+    @Test
+    void aRefusedAskDoesNotCancelTheAnswerAlreadyStreaming() throws Exception {
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean(false);
+        given(answerEngine.stream(any(), any()))
+                .willAnswer(invocation -> (AnswerEngine.AnswerStream) () -> cancelled.set(true));
+        var client = authenticated();
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"type\":\"answer_start\"")));
+
+        given(limits.tryAcquire(any(), anyLong())).willReturn(false);
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"code\":\"rate_limited\"")));
+
+        assertThat(cancelled).isFalse();
     }
 
     @Test

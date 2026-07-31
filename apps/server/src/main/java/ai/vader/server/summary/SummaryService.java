@@ -1,5 +1,6 @@
 package ai.vader.server.summary;
 
+import ai.vader.server.limit.ModelCallLimiter;
 import ai.vader.server.llm.JsonEngine;
 import ai.vader.server.persistence.Answer;
 import ai.vader.server.persistence.TranscriptTurn;
@@ -28,6 +29,7 @@ public class SummaryService {
     private final TranscriptService transcripts;
     private final PreferencesService preferences;
     private final JsonEngine llm;
+    private final ModelCallLimiter limits;
     private final ObjectMapper json;
 
     SummaryService(
@@ -35,11 +37,13 @@ public class SummaryService {
             TranscriptService transcripts,
             PreferencesService preferences,
             JsonEngine llm,
+            ModelCallLimiter limits,
             ObjectMapper json) {
         this.summaries = summaries;
         this.transcripts = transcripts;
         this.preferences = preferences;
         this.llm = llm;
+        this.limits = limits;
         this.json = json;
     }
 
@@ -60,6 +64,10 @@ public class SummaryService {
     public Recap recapOf(UUID sessionId, UUID userId) {
         var stored = summaries.find(sessionId, userId);
         if (stored.isPresent()) return stored.get();
+
+        // After the early return, so re-reading a recap that already exists
+        // never costs anyone a slice of their hour.
+        limits.require(userId, System.currentTimeMillis());
 
         transcripts
                 .session(sessionId, userId)

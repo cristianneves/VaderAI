@@ -3,6 +3,7 @@ package ai.vader.server.session;
 import ai.vader.server.llm.AnswerEngine;
 import ai.vader.server.llm.AnswerMode;
 import ai.vader.server.llm.AnswerRequest;
+import ai.vader.server.limit.ModelCallLimiter;
 import ai.vader.server.persistence.Answer;
 import ai.vader.server.persistence.AnswerTrigger;
 import ai.vader.server.persistence.TranscriptTurn;
@@ -52,6 +53,7 @@ final class LiveSession {
     private final TranscriptService transcripts;
     private final AnswerEngine answers;
     private final PromptAssembler prompts;
+    private final ModelCallLimiter limits;
     private final TranscriptRingBuffer recent = new TranscriptRingBuffer(CONTEXT_TURNS);
     private final TurnDetector turns = new TurnDetector();
     private final List<TranscriptTurn> pending = new ArrayList<>();
@@ -70,12 +72,14 @@ final class LiveSession {
             ObjectMapper json,
             TranscriptService transcripts,
             AnswerEngine answers,
-            PromptAssembler prompts) {
+            PromptAssembler prompts,
+            ModelCallLimiter limits) {
         this.socket = socket;
         this.json = json;
         this.transcripts = transcripts;
         this.answers = answers;
         this.prompts = prompts;
+        this.limits = limits;
     }
 
     TurnDetector turns() {
@@ -96,6 +100,15 @@ final class LiveSession {
      * @param mode which prompt to answer with; a screenshot forces coding anyway
      */
     void ask(AnswerTrigger trigger, Optional<AnswerRequest.ImageInput> image, String question, AnswerMode mode) {
+        // Before cancelInFlight, not after: a refused question must not take
+        // down the answer already on screen. All three triggers — manual,
+        // screenshot and auto — funnel through here, so this is the only check.
+        if (!limits.tryAcquire(userId, System.currentTimeMillis())) {
+            send(new ServerMessage.Failure(
+                    ErrorCode.RATE_LIMITED,
+                    "you have reached the hourly question limit — the next one will work in a little while"));
+            return;
+        }
         cancelInFlight();
 
         UUID answerId = UUID.randomUUID();

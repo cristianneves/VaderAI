@@ -4,6 +4,7 @@ import ai.vader.server.llm.AnswerEngine;
 import ai.vader.server.llm.AnswerMode;
 import ai.vader.server.llm.AnswerRequest;
 import ai.vader.server.knowledge.KnowledgeService;
+import ai.vader.server.limit.ModelCallLimiter;
 import ai.vader.server.persistence.AnswerTrigger;
 import ai.vader.server.preferences.Language;
 import ai.vader.server.preferences.PreferencesService;
@@ -72,6 +73,7 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
     private final PreferencesService preferences;
     private final AnswerEngine answers;
     private final PromptAssembler prompts;
+    private final ModelCallLimiter limits;
     private final ObjectMapper json;
 
     SessionWebSocketHandler(
@@ -82,6 +84,7 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
             PreferencesService preferences,
             AnswerEngine answers,
             PromptAssembler prompts,
+            ModelCallLimiter limits,
             ObjectMapper json) {
         this.jwtDecoder = jwtDecoder;
         this.sttProviders = sttProviders;
@@ -90,13 +93,14 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
         this.preferences = preferences;
         this.answers = answers;
         this.prompts = prompts;
+        this.limits = limits;
         this.json = json;
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         var socket = new ConcurrentWebSocketSessionDecorator(session, SEND_TIME_LIMIT_MS, SEND_BUFFER_LIMIT_BYTES);
-        var live = new LiveSession(socket, json, transcripts, answers, prompts);
+        var live = new LiveSession(socket, json, transcripts, answers, prompts, limits);
         sessions.put(session.getId(), live);
         live.awaitAuth(timers.schedule(
                 () -> closeUnauthenticated(session), AUTH_DEADLINE_SECONDS, TimeUnit.SECONDS));

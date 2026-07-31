@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import ai.vader.server.config.JdbcConversionsConfig;
 import ai.vader.server.knowledge.KnowledgeKind;
 import ai.vader.server.knowledge.KnowledgeService;
+import ai.vader.server.limit.ModelCallLimiter;
 import ai.vader.server.llm.JsonEngine;
 import ai.vader.server.preferences.PreferencesService;
 import ai.vader.server.session.TranscriptService;
@@ -24,8 +25,10 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Runs against the local Supabase Postgres for the same reason
@@ -43,6 +46,7 @@ import org.springframework.test.context.TestPropertySource;
     KnowledgeService.class,
     // Phase 9b: practice questions and grades come back in the session language.
     PreferencesService.class,
+    ModelCallLimiter.class,
     JdbcConversionsConfig.class,
     PracticeServiceTest.Stubs.class
 })
@@ -107,6 +111,9 @@ class PracticeServiceTest {
 
     @Autowired
     private StubJsonEngine llm;
+
+    @Autowired
+    private ModelCallLimiter limits;
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -194,6 +201,21 @@ class PracticeServiceTest {
         assertThat(again).hasSize(5);
         // One call, not two: the retry never reached the model.
         assertThat(llm.prompts).hasSize(1);
+    }
+
+    @Test
+    void refusesToStartOverTheHourlyLimitAndCostsNoModelCall() {
+        UUID sessionId = readySession(alice);
+        long now = System.currentTimeMillis();
+        for (int call = 0; call <= ModelCallLimiter.MAX_CALLS_PER_HOUR; call++) {
+            limits.tryAcquire(alice, now);
+        }
+
+        assertThatThrownBy(() -> practice.start(alice, sessionId))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(thrown -> ((ResponseStatusException) thrown).getStatusCode())
+                .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(llm.prompts).isEmpty();
     }
 
     @Test
