@@ -17,6 +17,7 @@ import ai.vader.server.turn.TurnDetector;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -56,6 +57,8 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
     private static final int SEND_TIME_LIMIT_MS = 5_000;
     /** A client too slow to drain this much is dropped rather than buffered forever. */
     private static final int SEND_BUFFER_LIMIT_BYTES = 512 * 1024;
+    /** What the Anthropic image block accepts, and so what we will forward. */
+    private static final Set<String> SCREENSHOT_MIME_TYPES = Set.of("image/png", "image/jpeg");
 
     private final Map<String, LiveSession> sessions = new ConcurrentHashMap<>();
     private final ScheduledExecutorService timers =
@@ -121,6 +124,16 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
             }
             case ClientMessage.Screenshot shot -> {
                 if (!requireAuth(session, live)) return;
+                // The client enforces this before sending, but a frame between
+                // the ceiling and the container's text buffer still reaches here
+                // — and a screenshot the model would reject is not worth an Opus
+                // call either way.
+                if (shot.dataBase64().length() > ClientMessage.MAX_SCREENSHOT_BASE64_CHARS
+                        || !SCREENSHOT_MIME_TYPES.contains(shot.mimeType())) {
+                    live.send(new ServerMessage.Failure(
+                            ErrorCode.BAD_REQUEST, "that screen capture is too large or not an image we can read"));
+                    return;
+                }
                 live.turns().recordManualAsk(System.currentTimeMillis());
                 live.ask(
                         AnswerTrigger.SCREENSHOT,

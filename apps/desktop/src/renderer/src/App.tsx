@@ -101,8 +101,10 @@ export function App(): React.JSX.Element {
           setComposing(true);
           break;
         case 'screenshot':
-          void window.vader.captureScreen().then((shot) => {
-            if (shot !== null) socket.current?.askAboutScreen(shot);
+          void window.vader.captureScreen().then((result) => {
+            if (result.ok) socket.current?.askAboutScreen(result.shot);
+            // Transient rather than a bug: retrying on a different window works.
+            else setProblem({ text: result.reason, severity: 'transient' });
           });
           break;
         default:

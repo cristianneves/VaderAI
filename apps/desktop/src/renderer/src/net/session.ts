@@ -2,6 +2,7 @@ import {
   PROTOCOL_VERSION,
   serverMessageSchema,
   type ClientMessage,
+  type Screenshot,
   type ServerMessage,
 } from '@vaderai/protocol';
 
@@ -239,7 +240,7 @@ export class SessionSocket {
     );
   }
 
-  askAboutScreen(shot: { mimeType: 'image/png'; dataBase64: string }, note?: string): void {
+  askAboutScreen(shot: Pick<Screenshot, 'mimeType' | 'dataBase64'>, note?: string): void {
     const trimmed = note?.trim();
     this.sendJson(
       trimmed === undefined || trimmed === ''

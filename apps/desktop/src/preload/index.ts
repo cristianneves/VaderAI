@@ -1,6 +1,6 @@
 import { clipboard, contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { PROTOCOL_VERSION } from '@vaderai/protocol';
-import type { CaptureProtection, OverlayAction, ScreenshotCapture } from '../shared/overlay';
+import type { CaptureProtection, OverlayAction, ShotResult } from '../shared/overlay';
 
 // The only channel between renderer and main. Grows in Phase 2 (audio).
 // Nothing here exposes Node or ipcRenderer directly.
@@ -9,8 +9,8 @@ const api = {
   platform: process.platform,
   getCaptureProtection: (): Promise<CaptureProtection> =>
     ipcRenderer.invoke('overlay:capture-protection'),
-  /** Grabs the screen at 1080p for the Ctrl+H path. Null if no screen is available. */
-  captureScreen: (): Promise<ScreenshotCapture | null> => ipcRenderer.invoke('overlay:screenshot'),
+  /** Grabs the screen as a 1280x720 JPEG for the Ctrl+H path, or says why not. */
+  captureScreen: (): Promise<ShotResult> => ipcRenderer.invoke('overlay:screenshot'),
   /** Writes a finished WAV to disk and resolves with its path. Debug only. */
   dumpWav: (bytes: Uint8Array): Promise<string> => ipcRenderer.invoke('audio:dump-wav', bytes),
   /** Save-dialog export. Resolves with the chosen path, or null if cancelled. */

@@ -179,7 +179,7 @@ describe('SessionSocket', () => {
 
   it('sends a screenshot note when there is one, and omits the field when not', async () => {
     const { session, socket } = await live();
-    const shot = { mimeType: 'image/png', dataBase64: 'AAAA' } as const;
+    const shot = { mimeType: 'image/jpeg', dataBase64: 'AAAA' } as const;
 
     session.askAboutScreen(shot);
     expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({ type: 'screenshot', ...shot });

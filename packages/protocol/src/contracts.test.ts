@@ -70,12 +70,19 @@ describe('client fixtures', () => {
 
   it('accepts an ask in coding mode', () => {
     expect(
-      clientMessageSchema.parse({ type: 'ask', trigger: 'manual', question: 'two sum', mode: 'coding' }),
+      clientMessageSchema.parse({
+        type: 'ask',
+        trigger: 'manual',
+        question: 'two sum',
+        mode: 'coding',
+      }),
     ).toMatchObject({ mode: 'coding' });
   });
 
   it('rejects a mode that is not one of the two prompts', () => {
-    expect(() => clientMessageSchema.parse({ ...(client['ask'] as object), mode: 'smart' })).toThrow();
+    expect(() =>
+      clientMessageSchema.parse({ ...(client['ask'] as object), mode: 'smart' }),
+    ).toThrow();
   });
 
   it('accepts a JPEG screenshot at exactly the ceiling', () => {

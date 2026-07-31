@@ -9,10 +9,12 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import ai.vader.server.llm.AnswerEngine;
+import ai.vader.server.llm.AnswerRequest;
 import ai.vader.server.persistence.Answer;
 import ai.vader.server.persistence.AnswerTrigger;
 import ai.vader.server.persistence.SessionKind;
 import ai.vader.server.persistence.SessionRow;
+import ai.vader.server.protocol.ClientMessage;
 import ai.vader.server.stt.SttProvider;
 import ai.vader.server.stt.SttProviderFactory;
 import org.mockito.ArgumentCaptor;
@@ -232,6 +234,51 @@ class SessionWebSocketHandlerTest {
         // Without this the review screen would show the answer with no question
         // in front of it and no way to explain why.
         assertThat(recorded.getValue().trigger()).isEqualTo(AnswerTrigger.SCREENSHOT);
+    }
+
+    @Test
+    void aJpegScreenshotIsAnswered() throws Exception {
+        stubACompletedAnswer();
+        var client = authenticated();
+
+        client.send("{\"type\":\"screenshot\",\"mimeType\":\"image/jpeg\",\"dataBase64\":\"QUJD\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"type\":\"answer_end\"")));
+        var sent = ArgumentCaptor.forClass(AnswerRequest.class);
+        verify(answerEngine).stream(sent.capture(), any());
+        assertThat(sent.getValue().image()).get().extracting(AnswerRequest.ImageInput::mediaType).isEqualTo("image/jpeg");
+    }
+
+    /**
+     * The regression guard for Phase 12a. A screenshot over the ceiling but under
+     * the container's text buffer has to come back as a frame; before the guard
+     * existed, a 1080p PNG went over the buffer instead and Tomcat closed the
+     * live session with 1009 and no error at all.
+     */
+    @Test
+    void anOversizedScreenshotIsRefusedWithoutClosingTheSession() throws Exception {
+        var client = authenticated();
+
+        client.send("{\"type\":\"screenshot\",\"mimeType\":\"image/jpeg\",\"dataBase64\":\""
+                + "A".repeat(ClientMessage.MAX_SCREENSHOT_BASE64_CHARS + 1) + "\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"code\":\"bad_request\"")));
+        assertThat(client.closeStatus.get()).isNull();
+        verify(answerEngine, never()).stream(any(), any());
+    }
+
+    @Test
+    void anImageTypeTheModelCannotReadIsRefused() throws Exception {
+        var client = authenticated();
+
+        client.send("{\"type\":\"screenshot\",\"mimeType\":\"image/webp\",\"dataBase64\":\"QUJD\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"code\":\"bad_request\"")));
+        assertThat(client.closeStatus.get()).isNull();
+        verify(answerEngine, never()).stream(any(), any());
     }
 
     @Test
