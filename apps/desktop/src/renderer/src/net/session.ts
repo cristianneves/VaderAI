@@ -1,6 +1,7 @@
 import {
   PROTOCOL_VERSION,
   serverMessageSchema,
+  type AskMode,
   type ClientMessage,
   type Screenshot,
   type ServerMessage,
@@ -230,14 +231,19 @@ export class SessionSocket {
    * Asks for an answer. With no question the server answers the interviewer's
    * most recent turn, which is what the bare Ctrl+Enter does; with one it
    * answers that instead, and can see the answers it already gave.
+   *
+   * `mode` is put on the wire only when it is 'coding': the server reads a
+   * missing field as interview, so the common path stays byte-identical to what
+   * it sent before the field existed.
    */
-  ask(question?: string): void {
+  ask(question?: string, mode: AskMode = 'interview'): void {
     const trimmed = question?.trim();
-    this.sendJson(
-      trimmed === undefined || trimmed === ''
-        ? { type: 'ask', trigger: 'manual' }
-        : { type: 'ask', trigger: 'manual', question: trimmed },
-    );
+    this.sendJson({
+      type: 'ask',
+      trigger: 'manual',
+      ...(trimmed === undefined || trimmed === '' ? {} : { question: trimmed }),
+      ...(mode === 'coding' ? { mode } : {}),
+    });
   }
 
   askAboutScreen(shot: Pick<Screenshot, 'mimeType' | 'dataBase64'>, note?: string): void {

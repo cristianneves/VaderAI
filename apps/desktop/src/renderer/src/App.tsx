@@ -350,7 +350,7 @@ export function App(): React.JSX.Element {
           <AskBar
             open={composing}
             disabled={connection !== 'ready'}
-            onAsk={(question) => socket.current?.ask(question)}
+            onAsk={(question, mode) => socket.current?.ask(question, mode)}
             onClose={closeComposer}
           />
         </>

@@ -1,6 +1,7 @@
 package ai.vader.server.session;
 
 import ai.vader.server.llm.AnswerEngine;
+import ai.vader.server.llm.AnswerMode;
 import ai.vader.server.llm.AnswerRequest;
 import ai.vader.server.persistence.Answer;
 import ai.vader.server.persistence.AnswerTrigger;
@@ -92,13 +93,15 @@ final class LiveSession {
      * follow-up memory — a cancelled answer is not something the model said.
      *
      * @param question what the user typed, or null to answer from the transcript
+     * @param mode which prompt to answer with; a screenshot forces coding anyway
      */
-    void ask(AnswerTrigger trigger, Optional<AnswerRequest.ImageInput> image, String question) {
+    void ask(AnswerTrigger trigger, Optional<AnswerRequest.ImageInput> image, String question, AnswerMode mode) {
         cancelInFlight();
 
         UUID answerId = UUID.randomUUID();
         String asked = describeAsk(question, image.isPresent());
-        var request = prompts.assemble(recent.snapshot(), knowledgeBase, image, question, memorySnapshot(), language);
+        var request =
+                prompts.assemble(recent.snapshot(), knowledgeBase, image, question, memorySnapshot(), language, mode);
         // Local to this call, so two asks racing each other cannot append into
         // one another's text.
         var spoken = new StringBuilder();

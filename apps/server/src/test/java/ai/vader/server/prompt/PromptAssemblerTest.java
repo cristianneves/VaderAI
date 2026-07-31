@@ -29,7 +29,17 @@ class PromptAssemblerTest {
             Optional<AnswerRequest.ImageInput> image,
             String question,
             List<AnswerRequest.Exchange> priorExchanges) {
-        return assembler.assemble(turns, knowledge, image, question, priorExchanges, Language.ENGLISH);
+        return assemble(turns, knowledge, image, question, priorExchanges, AnswerMode.INTERVIEW);
+    }
+
+    private AnswerRequest assemble(
+            List<TranscriptEvent> turns,
+            String knowledge,
+            Optional<AnswerRequest.ImageInput> image,
+            String question,
+            List<AnswerRequest.Exchange> priorExchanges,
+            AnswerMode requested) {
+        return assembler.assemble(turns, knowledge, image, question, priorExchanges, Language.ENGLISH, requested);
     }
 
     @Test
@@ -145,6 +155,47 @@ class PromptAssemblerTest {
     }
 
     @Test
+    void aRequestedCodingModeSwitchesPromptWithoutAScreenshot() {
+        // A LeetCode problem read out loud, or pasted into the ask bar, is the
+        // same kind of question as one on the screen.
+        var request = assemble(TURNS, "", Optional.empty(), "Two sum, sorted input.", List.of(), AnswerMode.CODING);
+
+        assertThat(request.mode()).isEqualTo(AnswerMode.CODING);
+        assertThat(request.cachedBlocks().get(0)).startsWith(PromptAssembler.CODING_SYSTEM_PROMPT);
+    }
+
+    @Test
+    void aTypedCodingQuestionSharesTheScreenshotCachedPrefix() {
+        // The point of routing both through one mode: the second one of these to
+        // arrive in a session reads the first one's cache rather than paying for
+        // a cold write.
+        var image = new AnswerRequest.ImageInput("image/png", "AAAA");
+
+        var typed = assemble(TURNS, "bg", Optional.empty(), "Two sum.", List.of(), AnswerMode.CODING);
+        var onScreen = assemble(TURNS, "bg", Optional.of(image), null, List.of(), AnswerMode.INTERVIEW);
+
+        assertThat(typed.cachedBlocks()).isEqualTo(onScreen.cachedBlocks());
+    }
+
+    @Test
+    void aScreenshotStaysCodingEvenWhenInterviewIsRequested() {
+        // The image is the override, so there is only one thing to get wrong.
+        var image = new AnswerRequest.ImageInput("image/png", "AAAA");
+
+        var request = assemble(TURNS, "", Optional.of(image), null, List.of(), AnswerMode.INTERVIEW);
+
+        assertThat(request.mode()).isEqualTo(AnswerMode.CODING);
+    }
+
+    @Test
+    void theDefaultRequestedModeKeepsTheInterviewPrompt() {
+        var request = assemble(TURNS, "", Optional.empty(), "Tell me about yourself.", List.of());
+
+        assertThat(request.mode()).isEqualTo(AnswerMode.INTERVIEW);
+        assertThat(request.cachedBlocks().get(0)).startsWith(PromptAssembler.SYSTEM_PROMPT);
+    }
+
+    @Test
     void blankKnowledgeBaseAddsNoBlock() {
         assertThat(assemble(TURNS, "   ").cachedBlocks()).hasSize(1);
     }
@@ -215,22 +266,22 @@ class PromptAssemblerTest {
 
     @Test
     void tellsTheModelWhichLanguageToAnswerIn() {
-        var request = assembler.assemble(TURNS, "", Optional.empty(), null, List.of(), Language.PORTUGUESE);
+        var request = assembler.assemble(TURNS, "", Optional.empty(), null, List.of(), Language.PORTUGUESE, AnswerMode.INTERVIEW);
 
         assertThat(request.cachedBlocks().get(0)).endsWith("Answer in Brazilian Portuguese.");
     }
 
     @Test
     void multilingualFollowsTheSpeakerRatherThanNamingALanguage() {
-        var request = assembler.assemble(TURNS, "", Optional.empty(), null, List.of(), Language.MULTI);
+        var request = assembler.assemble(TURNS, "", Optional.empty(), null, List.of(), Language.MULTI, AnswerMode.INTERVIEW);
 
         assertThat(request.cachedBlocks().get(0)).endsWith("Answer in whichever language the interviewer just used.");
     }
 
     @Test
     void theLanguageLivesInTheCachedPrefixBecauseItIsConstantForASession() {
-        var portuguese = assembler.assemble(TURNS, "bg", Optional.empty(), null, List.of(), Language.PORTUGUESE);
-        var english = assembler.assemble(TURNS, "bg", Optional.empty(), null, List.of(), Language.ENGLISH);
+        var portuguese = assembler.assemble(TURNS, "bg", Optional.empty(), null, List.of(), Language.PORTUGUESE, AnswerMode.INTERVIEW);
+        var english = assembler.assemble(TURNS, "bg", Optional.empty(), null, List.of(), Language.ENGLISH, AnswerMode.INTERVIEW);
 
         // Different languages must not share a prefix, or the second user's
         // cache hit would answer in the first user's language.
@@ -240,8 +291,8 @@ class PromptAssemblerTest {
 
     @Test
     void theSameLanguageProducesAByteIdenticalPrefix() {
-        var first = assembler.assemble(TURNS, "bg", Optional.empty(), null, List.of(), Language.JAPANESE);
-        var second = assembler.assemble(TURNS, "bg", Optional.empty(), "a question", List.of(), Language.JAPANESE);
+        var first = assembler.assemble(TURNS, "bg", Optional.empty(), null, List.of(), Language.JAPANESE, AnswerMode.INTERVIEW);
+        var second = assembler.assemble(TURNS, "bg", Optional.empty(), "a question", List.of(), Language.JAPANESE, AnswerMode.INTERVIEW);
 
         assertThat(first.cachedBlocks()).isEqualTo(second.cachedBlocks());
     }

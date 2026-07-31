@@ -17,4 +17,13 @@ export const QUICK_ACTIONS: readonly QuickAction[] = [
   { label: 'Shorter', question: 'Give me a shorter version of that answer.' },
   { label: 'More detail', question: 'Go deeper on that — add the specifics I left out.' },
   { label: 'Recap', question: 'Recap what has been discussed so far, briefly.' },
+  {
+    label: 'Fact check',
+    question: 'Check the claims in what was just said and flag anything that is wrong.',
+  },
+  {
+    label: 'Ask them',
+    question: 'Suggest a few questions I could ask them about what we just discussed.',
+  },
+  { label: 'Who is this?', question: 'From the conversation so far, who am I talking to?' },
 ];

@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import ai.vader.server.llm.AnswerEngine;
+import ai.vader.server.llm.AnswerMode;
 import ai.vader.server.llm.AnswerRequest;
 import ai.vader.server.persistence.Answer;
 import ai.vader.server.persistence.AnswerTrigger;
@@ -234,6 +235,34 @@ class SessionWebSocketHandlerTest {
         // Without this the review screen would show the answer with no question
         // in front of it and no way to explain why.
         assertThat(recorded.getValue().trigger()).isEqualTo(AnswerTrigger.SCREENSHOT);
+    }
+
+    @Test
+    void aCodingAskReachesTheEngineWithTheCodingPrompt() throws Exception {
+        stubACompletedAnswer();
+        var client = authenticated();
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\",\"question\":\"two sum\",\"mode\":\"coding\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"type\":\"answer_end\"")));
+        var sent = ArgumentCaptor.forClass(AnswerRequest.class);
+        verify(answerEngine).stream(sent.capture(), any());
+        assertThat(sent.getValue().mode()).isEqualTo(AnswerMode.CODING);
+    }
+
+    @Test
+    void anAskThatNamesNoModeIsAnInterviewQuestion() throws Exception {
+        stubACompletedAnswer();
+        var client = authenticated();
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"type\":\"answer_end\"")));
+        var sent = ArgumentCaptor.forClass(AnswerRequest.class);
+        verify(answerEngine).stream(sent.capture(), any());
+        assertThat(sent.getValue().mode()).isEqualTo(AnswerMode.INTERVIEW);
     }
 
     @Test

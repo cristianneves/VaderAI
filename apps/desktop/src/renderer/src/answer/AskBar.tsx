@@ -1,4 +1,4 @@
-import { MAX_QUESTION_CHARS } from '@vaderai/protocol';
+import { MAX_QUESTION_CHARS, type AskMode } from '@vaderai/protocol';
 import { useEffect, useRef, useState } from 'react';
 import { QUICK_ACTIONS } from './quick-actions';
 
@@ -6,7 +6,7 @@ interface AskBarProps {
   /** True while the composer should hold keyboard focus. */
   readonly open: boolean;
   readonly disabled: boolean;
-  readonly onAsk: (question: string) => void;
+  readonly onAsk: (question: string, mode: AskMode) => void;
   readonly onClose: () => void;
 }
 
@@ -20,6 +20,12 @@ interface AskBarProps {
  */
 export function AskBar({ open, disabled, onAsk, onClose }: AskBarProps): React.JSX.Element {
   const [text, setText] = useState('');
+  /**
+   * Kept here rather than in App so it survives the composer opening and
+   * closing — someone working through a coding round should not have to set it
+   * again for every follow-up — while a fresh live view starts on interview.
+   */
+  const [coding, setCoding] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -29,7 +35,7 @@ export function AskBar({ open, disabled, onAsk, onClose }: AskBarProps): React.J
   function send(question: string): void {
     const trimmed = question.trim();
     if (trimmed === '' || disabled) return;
-    onAsk(trimmed);
+    onAsk(trimmed, coding ? 'coding' : 'interview');
     setText('');
     onClose();
   }
@@ -37,6 +43,15 @@ export function AskBar({ open, disabled, onAsk, onClose }: AskBarProps): React.J
   return (
     <div className="ask-bar">
       <div className="quick-actions">
+        <button
+          className={`chip ${coding ? 'on' : ''}`}
+          aria-pressed={coding}
+          disabled={disabled}
+          title="Answer with an approach, code and complexity instead of something to say out loud"
+          onClick={() => setCoding(!coding)}
+        >
+          Code
+        </button>
         {QUICK_ACTIONS.map((action) => (
           <button
             key={action.label}

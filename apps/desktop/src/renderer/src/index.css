@@ -329,6 +329,12 @@ button.link {
   opacity: 0.4;
 }
 
+.chip.on {
+  border-color: #6b6bff;
+  background: #23233a;
+  color: #f0f0f5;
+}
+
 .ask-input {
   width: 100%;
   padding: 5px 7px;

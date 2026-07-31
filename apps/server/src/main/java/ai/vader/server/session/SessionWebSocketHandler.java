@@ -1,6 +1,7 @@
 package ai.vader.server.session;
 
 import ai.vader.server.llm.AnswerEngine;
+import ai.vader.server.llm.AnswerMode;
 import ai.vader.server.llm.AnswerRequest;
 import ai.vader.server.knowledge.KnowledgeService;
 import ai.vader.server.persistence.AnswerTrigger;
@@ -120,7 +121,13 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
             case ClientMessage.Ask ask -> {
                 if (!requireAuth(session, live)) return;
                 live.turns().recordManualAsk(System.currentTimeMillis());
-                live.ask(AnswerTrigger.MANUAL, Optional.empty(), ask.question());
+                // Silence means interview. This is the only place that decides
+                // it, so the protocol can keep sending nothing on the common path.
+                live.ask(
+                        AnswerTrigger.MANUAL,
+                        Optional.empty(),
+                        ask.question(),
+                        ask.mode() == ClientMessage.Mode.CODING ? AnswerMode.CODING : AnswerMode.INTERVIEW);
             }
             case ClientMessage.Screenshot shot -> {
                 if (!requireAuth(session, live)) return;
@@ -135,10 +142,13 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
                     return;
                 }
                 live.turns().recordManualAsk(System.currentTimeMillis());
+                // The image is what forces coding, inside the assembler — a
+                // second way to say the same thing is a second thing to get wrong.
                 live.ask(
                         AnswerTrigger.SCREENSHOT,
                         Optional.of(new AnswerRequest.ImageInput(shot.mimeType(), shot.dataBase64())),
-                        shot.note());
+                        shot.note(),
+                        AnswerMode.INTERVIEW);
             }
         }
     }
@@ -212,7 +222,7 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
                 timers.schedule(
                         () -> {
                             if (live.turns().pollAutoAsk(System.currentTimeMillis())) {
-                                live.ask(AnswerTrigger.AUTO, Optional.empty(), null);
+                                live.ask(AnswerTrigger.AUTO, Optional.empty(), null, AnswerMode.INTERVIEW);
                             }
                         },
                         TurnDetector.SILENCE_MS,
