@@ -8,6 +8,7 @@ import ai.vader.server.config.JdbcConversionsConfig;
 import ai.vader.server.knowledge.KnowledgeKind;
 import ai.vader.server.knowledge.KnowledgeService;
 import ai.vader.server.llm.JsonEngine;
+import ai.vader.server.preferences.PreferencesService;
 import ai.vader.server.session.TranscriptService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
@@ -40,6 +41,8 @@ import org.springframework.test.context.TestPropertySource;
     PracticeService.class,
     TranscriptService.class,
     KnowledgeService.class,
+    // Phase 9b: practice questions and grades come back in the session language.
+    PreferencesService.class,
     JdbcConversionsConfig.class,
     PracticeServiceTest.Stubs.class
 })

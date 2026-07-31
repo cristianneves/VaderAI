@@ -1,6 +1,6 @@
 # 002 — MVP Implementation Phases
 
-**Status:** approved — all nine phases built (see each exit criterion for what is still a manual check; Phase 8's needs a clean VM and a Fly.io account, Phase 9's needs a working Supabase port)
+**Status:** approved — all nine phases built (see each exit criterion for what is still a manual check; Phase 8's needs a clean VM and a Fly.io account)
 **Scope:** Windows-only MVP — working app, no billing
 **Backend:** Java 21 + Spring Boot 3.4 (Maven)
 **Total estimate:** ~12–16 days
@@ -668,39 +668,49 @@ a row that does not exist.
 **Exit criterion:** finish a session, open History, see a recap with key points
 and action items; reopening it makes no second model call.
 
-**Rendering and prompt verified; the round trip needs the database.** See the
-note below.
+**Met.** `SessionSummaryStorageTest` runs it end to end against the real
+database: three reads, one model call, lists intact through `text[]`.
 
 ### Cross-cutting
 
 - [x] Auto-scroll on both panes, but only while the reader has not scrolled away
 - [x] `README.md` and this file updated; version `0.9.0` in both `package.json`s and `pom.xml`
 
-### What is not verified, and why
+### Verification
 
-**The database-backed tests did not run on this machine.** Windows has reserved
-TCP `54267–54366` (`netsh interface ipv4 show excludedportrange`), which swallows
-Supabase's `54322`, so `supabase start` cannot bind Postgres. Freeing it is
-`net stop winnat && net start winnat` from an elevated prompt, or changing the
-port in `supabase/config.toml`.
+**Closed after the merge.** The Windows reserved port range that was blocking
+Supabase's `54322` is gone, so the database half finally ran. Note that
+`supabase start` restores from a cached snapshot and does **not** replay new
+migrations — `supabase db reset` is what applied these two.
 
-What that leaves unproven, specifically:
+- **Both migrations apply clean** — `20260801090000_user_language` and
+  `20260801100000_session_summaries`, replayed from an empty database.
+- **`PreferencesServiceTest`** (9 tests, real Postgres): a new user defaults to
+  English, a language round-trips, the stored value is the code Deepgram
+  expects, one user's language does not touch another's, an unknown or
+  URL-tampering code is rejected without being stored, and an unreadable or
+  retired value falls back to English rather than taking the session down.
+- **`SessionSummaryStorageTest`** (8 tests, real Postgres): lists survive the
+  `text[]` round trip, the model is called **once** across three reads, an empty
+  session is refused without billing a call, another user gets a 404 and no model
+  call either way, and deleting the session cascades the recap away.
 
-- **Both new migrations have never been applied.** `20260801090000_user_language`
-  and `20260801100000_session_summaries`.
-- **The `text[]` mapping.** `String[]` ↔ Postgres `text[]` through Spring Data
-  JDBC is the single most likely thing in this phase to need a converter after
-  all. It compiles; it has not round-tripped.
-- **`ProfileRepository`'s `@Query` methods**, and that `PreferencesService` falls
-  back to English when the row cannot be read.
-- **`SummaryService`'s generate-once behaviour**, including the `DuplicateKeyException`
-  path when two clients open the panel at once.
+**182 Java tests and 205 TypeScript tests, all green.**
 
-Everything not touching the database is green: **102 Java tests** across the
-DB-free suites (`Language`, `Summary`, `PromptAssembler`, `PracticePrompts`,
-`Deepgram`, both engines, `ContractFixtures`, `TurnDetector`,
-`TranscriptRingBuffer`) and **205 TypeScript tests** (21 protocol + 184
-desktop).
+Two things this run caught that nothing else would have:
+
+- **`PracticeServiceTest` had a broken context.** Phase 9b gave `PracticeService`
+  a `PreferencesService` dependency, and the `@DataJdbcTest` slice imports beans
+  explicitly — so every test in that class errored on startup. Only a run with a
+  database reaches that failure.
+- **The recap's storage was rewritten.** `SessionSummaryStore` replaces the
+  entity, repository and `JdbcAggregateTemplate` with explicit SQL — one class
+  instead of three moving parts, with the insert race handled by
+  `on conflict do nothing` rather than a caught `DuplicateKeyException`.
+
+Still needing a real key, unchanged from Phases 3–6: whether follow-ups read as
+follow-ups, whether the Portuguese is good, and whether the coding answers are
+correct.
 
 ---
 
