@@ -1,6 +1,6 @@
 # 002 — MVP Implementation Phases
 
-**Status:** approved — all twelve phases built (see each exit criterion for what is still a manual check; Phase 8's needs a clean VM and a Fly.io account, and Phase 12's needs a real screen)
+**Status:** approved — all thirteen phases built (see each exit criterion for what is still a manual check; Phase 8's needs a clean VM and a Fly.io account, Phase 12's needs a real screen, and Phase 13's needs a second monitor and a packaged build)
 **Scope:** Windows-only MVP — working app, no billing
 **Backend:** Java 21 + Spring Boot 3.4 (Maven)
 **Total estimate:** ~12–16 days
@@ -1096,6 +1096,147 @@ Still manual, and none of it is proven by the suite:
 
 ---
 
+## Phase 13 — Overlay controls, usage, and a pipeline that runs
+
+**Goal:** make the overlay a window someone can live in for an hour, and close
+the hole Phase 12c opened.
+**Estimate:** 1–2 days · **Risk:** low · **Depends on:** Phase 12
+Version moves to `0.13.0`.
+
+### 13a — The overlay stays where it was put
+
+- [x] `main/overlay-prefs.ts` — parsing, clamping and display checks, kept free
+      of electron so the rules are testable
+- [x] `main/overlay-store.ts` — the file, in `userData` beside the error log
+- [x] Window is resizable with a `320×240` floor; bounds saved on `moved` and
+      `resized`, debounced 400 ms, flushed on close
+- [x] Saved bounds are restored only if they still overlap a display
+
+`parsePrefs` falls back per field rather than all-or-nothing: a file written by
+a build without click-through should cost the position, not the whole file.
+The display check exists for one case — the overlay was last on a second
+monitor, that monitor is gone, and restoring faithfully puts the window
+somewhere unreachable.
+
+Prefs are local rather than server-side, unlike the knowledge base and language:
+where a window sits belongs to the machine, not the account.
+
+**Exit criterion:** the overlay reopens where it was left, at the size it was
+left, and never off-screen.
+
+**Met in tests.** 13 in `overlay-prefs.test.ts`. Actually dragging the window is
+a manual check.
+
+### 13b — Opacity and click-through
+
+- [x] `Ctrl+Shift+,` / `Ctrl+Shift+.` step opacity, floored at `0.3`
+- [x] `Ctrl+Shift+X` toggles click-through via `setIgnoreMouseEvents`
+- [x] Both persist with the bounds
+- [x] The renderer shows a standing notice while clicks pass through
+
+Two things here are not decoration. The opacity floor: an overlay at zero is
+invisible, still on top, and still eating clicks — a window the user cannot find
+to fix. And click-through is bound to a **hotkey**, not a button, because an
+overlay ignoring clicks has no button left to press; `hotkeys.test.ts` pins that
+binding for exactly that reason. The on-screen notice is there because a window
+that silently stopped accepting clicks reads as frozen.
+
+**Exit criterion:** the overlay can be faded and clicked through, and there is
+always a way back.
+
+**Met in tests** for the rules; the visual result is manual.
+
+### 13c — Where you stand against the cap
+
+- [x] `ModelCallLimiter.remaining()` — a read that spends nothing
+- [x] `GET /v1/usage`, scoped to the token subject
+- [x] The overlay warns from 20 calls out, red at zero
+- [x] Re-read on `answer_end`, so the count is current before the next question
+
+Phase 12c introduced a limit whose first sign was being refused by it. A cap the
+user cannot see coming is indistinguishable from the app breaking.
+
+Shown only when it is close: a running tally of something nobody is near is one
+more number on a small overlay.
+
+**Exit criterion:** nobody meets the hourly cap without warning.
+
+**Met.** `UsageControllerTest` is the first MockMvc test in the repo — it pins
+that the user comes from the token and not from a query parameter. Note it does
+**not** exercise our own `SecurityConfig`, which is package-private and
+deliberately not widened for a test; it runs against Boot's default test chain,
+so "requires authentication" is proven and "our rules are why" is not.
+
+### 13d — Ordinary ways in and out
+
+- [x] Tray icon: show, hide, quit
+- [x] Sign-out in the Background panel, which stops the session first
+- [x] `build/icon.ico` added to the packaged files, since the tray reads it at
+      runtime rather than only at package time
+
+`skipTaskbar: true` means a hidden overlay has nothing to click and only
+`Ctrl+\`` to bring it back — and that accelerator is gone if another app owns
+it, which `registerHotkeys` already reports. The tray is the way back that does
+not depend on a hotkey being available.
+
+Sign-out stops the socket before clearing the session: a live connection
+outliving the credential that opened it is what Phase 11 spent itself fixing.
+
+**Exit criterion:** the app can be reached, hidden and quit without Task
+Manager, and a user can switch accounts without waiting for an auth error.
+
+**Manual.** Both are electron-surface behaviour with no seam worth a test.
+
+### 13e — CI actually runs the database tests
+
+- [x] `supabase/setup-cli` plus `supabase start` in the Java job, with the
+      services nothing here talks to excluded
+
+**What was actually wrong.** [`005`](005-competitive-review.md) recorded that
+seven test classes `assumeTrue`-skip without a database and therefore skipped in
+CI. That was wrong, and worse than described: **the guard never fires.** Spring
+Data JDBC resolves its dialect from a live connection during context
+initialisation, so an unreachable database fails the context before
+`@BeforeEach` runs. Pointing `SUPABASE_DB_URL` at a closed port gives five
+errors and zero skips. The Java job has been erroring, not quietly passing.
+
+The full stack rather than a Postgres service container, because `auth.users`
+and the foreign keys onto it are the entire reason these tests are worth having.
+
+A guard turning the skip into a hard failure was written, tested, and then
+**cut** — it cannot fire, and shipping code for a scenario that does not occur
+is the thing `CLAUDE.md` §2 names.
+
+**Exit criterion:** the cross-user scoping proof runs in CI.
+
+**Not verified here.** This is a workflow change, and the only place it runs is
+CI. Watch the first run on the PR.
+
+### Cross-cutting
+
+- [x] `README.md` and this file updated; version `0.13.0` in both `package.json`s
+      and `pom.xml`
+
+### Verification
+
+**226 Java tests and 266 TypeScript tests, all green** (from 218 and 247 at
+`0.12.0`). `pnpm typecheck`, `pnpm lint` and `pnpm format:check` clean.
+
+Manual, and none of it proven by the suite:
+
+1. Drag and resize the overlay, quit, reopen — same place, same size.
+2. Unplug or disable a second monitor the overlay was on, reopen — it comes back
+   on a screen rather than nowhere.
+3. `Ctrl+Shift+X`, confirm clicks reach the meeting underneath and the notice
+   appears, then `Ctrl+Shift+X` again to get them back.
+4. Tray: show, hide, quit. Then the packaged build, where the icon path resolves
+   inside the asar rather than from the source tree — this is the one most
+   likely to differ between `pnpm dev` and an installed app.
+5. Sign out from Background, confirm the socket stops and the sign-in screen
+   returns.
+
+---
+
 ## Summary
 
 | Phase | Deliverable                         | Language | Est.         | Risk        |
@@ -1113,7 +1254,8 @@ Still manual, and none of it is proven by the suite:
 | 10    | Hardening (reconnect · server ops)  | both     | 1 d          | Low         |
 | 11    | Auth-aware session · error severity | both     | 1 d          | Low         |
 | 12    | Screenshot budget · coding · limits | both     | 1–2 d        | Low         |
-|       | **Total**                           |          | **~17–23 d** |             |
+| 13    | Overlay controls · usage · CI       | both     | 1–2 d        | Low         |
+|       | **Total**                           |          | **~18–25 d** |             |
 
 **Minimum demoable product:** Phases 0–4. Phases 5–8 make it a product someone else can use.
 

@@ -2,7 +2,7 @@
 
 A real-time AI copilot for interviews and study sessions. VaderAI runs as an always-on-top desktop overlay on Windows that listens to your call, watches your screen, and streams answers only you can see.
 
-**Status:** v0.12.0 — all twelve phases built. The overlay captures both audio channels, streams them to the backend, and renders a speaker-attributed transcript plus a streaming answer that fires on its own when the interviewer stops talking — grounded in a résumé, job description, and notes you supply. There is also a practice mode that runs a graded mock interview with no live call, and every session is kept for review and export afterwards. It packages to a Windows installer and the backend containerises for deployment. The live session now survives a dropped connection on its own, and a backend missing a provider key says so at boot rather than mid-interview. Phase 12 fixed the screen-capture path, which had been sending a payload too large for the socket to carry, made coding mode reachable without a screenshot, and put an hourly cap on billable model calls. Provider keys (Deepgram, Anthropic) are needed to run it against the real services.
+**Status:** v0.13.0 — all thirteen phases built. The overlay captures both audio channels, streams them to the backend, and renders a speaker-attributed transcript plus a streaming answer that fires on its own when the interviewer stops talking — grounded in a résumé, job description, and notes you supply. There is also a practice mode that runs a graded mock interview with no live call, and every session is kept for review and export afterwards. It packages to a Windows installer and the backend containerises for deployment. The live session now survives a dropped connection on its own, and a backend missing a provider key says so at boot rather than mid-interview. Phase 12 fixed the screen-capture path, which had been sending a payload too large for the socket to carry, made coding mode reachable without a screenshot, and put an hourly cap on billable model calls. Phase 13 made the overlay movable, resizable, fade-able and click-through-able, gave it a tray icon and a sign-out, and showed the user where they stand against that cap. Provider keys (Deepgram, Anthropic) are needed to run it against the real services.
 
 ---
 
@@ -28,6 +28,7 @@ screen capture (screenshots)  ──────→  Claude  →  answer streame
 - **Post-call recap** — a summary, key points and action items, generated once and stored so reopening it costs nothing.
 - **Reconnects on its own** — a heartbeat catches a dropped Wi-Fi or a slept laptop within ~25s, and the session retries indefinitely with a capped backoff, refreshing the access token as it goes so a long interview outlives its expiry. The overlay says how much audio went untranscribed while it was down.
 - **Excluded from screen sharing** — the overlay uses Windows' `WDA_EXCLUDEFROMCAPTURE`, enforced by the desktop compositor.
+- **A window you can place** — drag, resize, fade, or let clicks pass straight through to the meeting underneath. Position and size are remembered, and dropped if the screen they were on is gone. A tray icon brings it back when it is hidden.
 
 **Target:** first visible token within ~1.3–1.6 s of the question ending. Every
 answer now logs a server-side `ttftMs` — ask to first model delta — beside its
@@ -220,6 +221,8 @@ every repository call takes the user id from the verified JWT, and
 | `Ctrl+H`             | screenshot + ask about the screen |
 | `Ctrl+Shift+↑/↓/←/→` | move overlay                      |
 | `Ctrl+Shift+C`       | clear answer panel                |
+| `Ctrl+Shift+,` / `.` | fade the overlay out / in         |
+| `Ctrl+Shift+X`       | let clicks pass through           |
 
 `Ctrl+K` is the one hotkey that changes the window's behaviour: the overlay is
 `focusable: false` so it never steals focus from the meeting, which also means

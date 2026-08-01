@@ -1,6 +1,6 @@
 {
   "name": "vaderai",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "description": "Real-time AI copilot for interviews and study sessions — TypeScript workspace (Electron desktop + shared protocol). The backend lives in apps/server and is a Java/Maven project, not a pnpm workspace member.",
   "packageManager": "pnpm@11.17.0",
