@@ -369,6 +369,21 @@ button.link {
   color: #ffe9c4;
 }
 
+/* A standing state rather than an event: nothing happens when it is clicked,
+   so it should not look like it invites one. */
+.problem.notice {
+  cursor: default;
+}
+
+/* Last in the panel and set apart: signing out is not one of the things
+   someone came to Settings to do. */
+.sign-out {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #2a2a38;
+  text-align: right;
+}
+
 /* Nothing to dismiss: the session is over until they sign in again. */
 .problem.fatal {
   display: flex;

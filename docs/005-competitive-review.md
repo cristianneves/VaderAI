@@ -113,13 +113,22 @@ auto-ask on by default — to be settled _"with measurements during Phase 4, not
 from first principles."_ Those measurements were never taken, because nothing
 recorded a time. Both defaults are still guesses.
 
-### 5. The isolation guarantee is not verified by CI — **open**
+### 5. The isolation guarantee is not verified by CI — **fixed in Phase 13e**
 
-`UserScopingTest` and `SessionSummaryStorageTest` `assumeTrue` themselves into a
-skip when local Supabase is unreachable. That is exactly the CI condition, so the
-cross-user scoping proof — the thing standing in for RLS, since the backend uses
-the service role — runs only on a developer machine that happens to have the
-stack up. Not fixed here; it needs a Postgres service container in the workflow.
+Seven test classes, `UserScopingTest` among them, carry an `assumeTrue` guard
+meant to skip them when local Supabase is unreachable — which is exactly the CI
+condition, since the workflow started no database.
+
+**The guard does not work.** Spring Data JDBC resolves its dialect from a live
+connection while the application context initialises, so an unreachable database
+fails the context before `@BeforeEach` ever runs. Verified by pointing
+`SUPABASE_DB_URL` at a closed port: five errors, zero skips. So these classes
+were not quietly passing in CI — they were erroring, and the Java job with them.
+
+The fix is to give CI a real database (`supabase start`, not a bare Postgres
+image — `auth.users` and the foreign keys onto it are the whole point). A guard
+that turns the skip into a hard failure was written and then cut: it cannot fire,
+because the context dies first.
 
 ---
 
@@ -134,7 +143,7 @@ Impact ÷ cost. `004`'s unscheduled 8–13 carried forward and renumbered.
 |  3  | **Overlay is a fixed 460×620 box**                        | No resize, no opacity, no click-through, no position memory. It permanently covers a rectangle of the meeting and reopens at the OS default. |  M   |  13   |
 |  4  | **No device picker, mute, or level meter**                | "Which mic am I using?" is answerable only by dumping a WAV and opening Audacity. Cluely has a mid-session audio toggle.                     |  S   |  13   |
 |  5  | **No tone / verbosity / persona control**                 | Cluely sells "Customize Cluely" prompt sets. We have one hard-coded voice.                                                                   |  S   |  13   |
-|  6  | **CI does not prove cross-user isolation**                | Defect 5 above. The one test guarding the thing that replaces RLS does not run where it matters.                                             |  S   |  13   |
+|  6  | ~~CI does not prove cross-user isolation~~                | Defect 5 above — closed in 13e by starting the Supabase stack in the workflow.                                                               |  S   |  13   |
 |  7  | **No sign-out, tray icon, auto-update, or usage display** | Ordinary hygiene, all absent. There is now an hourly cap with no way for a user to see where they are against it.                            |  M   |  13   |
 |  8  | Fixed 3-slot knowledge base                               | Competitors allow dozens. Our 8,000-token ceiling is still display-only and enforces nothing.                                                |  M   |   —   |
 |  9  | No retrieval — whole KB on every question                 | Fine at 3 slots. Becomes the reason gap 8 is hard.                                                                                           |  L   |   —   |

@@ -60,6 +60,19 @@ public class ModelCallLimiter {
     }
 
     /**
+     * Calls left in this user's current window.
+     *
+     * <p>A read, so it never opens a window or spends one — asking how much is
+     * left must not itself cost anything. A user with no window yet has the
+     * whole allowance.
+     */
+    public int remaining(UUID userId, long nowMs) {
+        Window window = windows.get(userId);
+        if (window == null || nowMs - window.startedAtMs() >= WINDOW_MS) return MAX_CALLS_PER_HOUR;
+        return Math.max(0, MAX_CALLS_PER_HOUR - window.calls());
+    }
+
+    /**
      * The REST form. {@code ApiExceptionHandler} already renders a
      * {@link ResponseStatusException} as RFC 9457 problem+json and the desktop
      * app already surfaces its detail, so a 429 needs nothing else on either

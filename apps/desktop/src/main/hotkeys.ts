@@ -4,12 +4,19 @@ import type { OverlayAction } from '../shared/overlay';
 
 export const MOVE_STEP_PX = 40;
 
+export const OPACITY_STEP = 0.1;
+
 export const HOTKEYS: ReadonlyArray<{ accelerator: string; action: OverlayAction }> = [
   { accelerator: 'Control+`', action: { type: 'toggle' } },
   { accelerator: 'Control+Enter', action: { type: 'ask' } },
   { accelerator: 'Control+K', action: { type: 'compose' } },
   { accelerator: 'Control+H', action: { type: 'screenshot' } },
   { accelerator: 'Control+Shift+C', action: { type: 'clear' } },
+  // The way back from click-through. With the overlay ignoring clicks there is
+  // no button left to press, so this cannot be a UI control only.
+  { accelerator: 'Control+Shift+X', action: { type: 'click-through' } },
+  { accelerator: 'Control+Shift+.', action: { type: 'opacity', delta: OPACITY_STEP } },
+  { accelerator: 'Control+Shift+,', action: { type: 'opacity', delta: -OPACITY_STEP } },
   { accelerator: 'Control+Shift+Up', action: { type: 'move', dx: 0, dy: -MOVE_STEP_PX } },
   { accelerator: 'Control+Shift+Down', action: { type: 'move', dx: 0, dy: MOVE_STEP_PX } },
   { accelerator: 'Control+Shift+Left', action: { type: 'move', dx: -MOVE_STEP_PX, dy: 0 } },

@@ -62,10 +62,41 @@ describe('HOTKEYS', () => {
 
   it('covers every documented action', () => {
     const types = new Set(HOTKEYS.map((h) => h.action.type));
-    expect(types).toEqual(new Set(['toggle', 'ask', 'compose', 'screenshot', 'clear', 'move']));
+    expect(types).toEqual(
+      new Set([
+        'toggle',
+        'ask',
+        'compose',
+        'screenshot',
+        'clear',
+        'move',
+        'click-through',
+        'opacity',
+      ]),
+    );
   });
 
   it('binds the ask bar to Ctrl+K', () => {
     expect(HOTKEYS.find((h) => h.action.type === 'compose')?.accelerator).toBe('Control+K');
+  });
+
+  /**
+   * The escape hatch. A click-through overlay accepts no clicks, so if this
+   * binding ever disappears the only way back is to kill the process.
+   */
+  it('binds click-through to a hotkey, because no button can reach it', () => {
+    expect(HOTKEYS.find((h) => h.action.type === 'click-through')?.accelerator).toBe(
+      'Control+Shift+X',
+    );
+  });
+
+  it('steps opacity both ways', () => {
+    const deltas = HOTKEYS.filter((h) => h.action.type === 'opacity').map((h) =>
+      h.action.type === 'opacity' ? h.action.delta : 0,
+    );
+
+    expect(deltas).toHaveLength(2);
+    expect(deltas.some((d) => d > 0)).toBe(true);
+    expect(deltas.some((d) => d < 0)).toBe(true);
   });
 });

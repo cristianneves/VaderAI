@@ -12,6 +12,7 @@ import { serverWsUrl, supabase } from './auth/supabase';
 import { HistoryPanel } from './history/HistoryPanel';
 import { severityOf, type Severity } from './net/problem';
 import { SessionSocket, type ConnectionState } from './net/session';
+import { fetchUsage, shouldWarn, type Usage } from './net/usage';
 import {
   dismiss,
   isDismissed,
@@ -60,6 +61,9 @@ export function App(): React.JSX.Element {
   const [problem, setProblem] = useState<{ text: string; severity: Severity } | null>(null);
   /** Carries "reconnecting… (attempt 3)" — the bare state word does not. */
   const [connectionDetail, setConnectionDetail] = useState<string | null>(null);
+  /** Null until the first read succeeds; shown only when the cap is close. */
+  const [usage, setUsage] = useState<Usage | null>(null);
+  const [clickThrough, setClickThrough] = useState(false);
 
   /** Clicking the open panel's button returns to the live view. */
   const toggle = (panel: View): void => setView((current) => (current === panel ? 'live' : panel));
@@ -113,6 +117,8 @@ export function App(): React.JSX.Element {
     });
   }, []);
 
+  useEffect(() => window.vader.onClickThrough(setClickThrough), []);
+
   useEffect(() => {
     if (supabase === null) return;
     void supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -141,10 +147,19 @@ export function App(): React.JSX.Element {
       .catch(() => undefined);
   }
 
+  /** Swallowed on failure: a usage read is never worth an error in the overlay. */
+  function reloadUsage(): void {
+    if (token === undefined) return;
+    void fetchUsage(token)
+      .then(setUsage)
+      .catch(() => undefined);
+  }
+
   useEffect(() => {
     if (token === undefined) return;
     void readMicPermission().then(setMicPermission);
     reloadKnowledge();
+    reloadUsage();
   }, [token]);
 
   const listening = audioState === 'starting' || audioState === 'running';
@@ -200,6 +215,9 @@ export function App(): React.JSX.Element {
               break;
             default:
               setAnswer((current) => applyAnswer(current, message));
+              // Re-read once the answer that spent one has finished, so the
+              // count is current before the next question rather than after.
+              if (message.type === 'answer_end') reloadUsage();
               break;
           }
         },
@@ -283,6 +301,13 @@ export function App(): React.JSX.Element {
             // Re-read so the first-run prompt clears the moment something is saved.
             reloadKnowledge();
           }}
+          onSignOut={() => {
+            // Stop first: a live socket outliving the credential that opened it
+            // is exactly what Phase 11 spent itself fixing.
+            stopListening();
+            setView('live');
+            void supabase?.auth.signOut();
+          }}
         />
       ) : view === 'practice' ? (
         <PracticePanel
@@ -354,6 +379,24 @@ export function App(): React.JSX.Element {
             onClose={closeComposer}
           />
         </>
+      )}
+
+      {clickThrough && (
+        // Not dismissible by clicking, because clicks are exactly what this
+        // window is no longer taking. The hotkey is the only way out and has to
+        // be on screen.
+        <p className="problem transient notice">
+          clicks pass through — Ctrl+Shift+X to take them back
+        </p>
+      )}
+
+      {shouldWarn(usage) && (
+        // Amber while there is room left, red once there is not.
+        <p className={`problem notice ${usage.remaining === 0 ? '' : 'transient'}`}>
+          {usage.remaining === 0
+            ? 'hourly question limit reached — it resets within the hour'
+            : `${usage.remaining} of ${usage.limit} questions left this hour`}
+        </p>
       )}
 
       {connection === 'reconnecting' && (

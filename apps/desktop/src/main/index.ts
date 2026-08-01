@@ -5,16 +5,29 @@ import { join } from 'node:path';
 import { registerDisplayMediaHandler } from './display-media';
 import { registerExportHandler } from './export';
 import { registerHotkeys } from './hotkeys';
-import { createOverlayWindow, moveOverlay, setComposing, toggleOverlay } from './overlay-window';
+import type { OverlayPrefs } from './overlay-prefs';
+import { OverlayStore } from './overlay-store';
+import {
+  createOverlayWindow,
+  moveOverlay,
+  setClickThrough,
+  setComposing,
+  stepOpacity,
+  toggleOverlay,
+} from './overlay-window';
 import { startReporting } from './reporter';
 import { captureScreen } from './screenshot';
+import { createTray } from './tray';
 import { captureProtectionNotice, checkCaptureProtection } from './windows-support';
 import type { OverlayAction } from '../shared/overlay';
 
 // Before anything else, so a failure during startup is still recorded.
 const errorLog = startReporting();
 
-function handleAction(window: BrowserWindow, action: OverlayAction): void {
+/** How long the window has to stay put before its position is written down. */
+const SAVE_DEBOUNCE_MS = 400;
+
+function handleAction(window: BrowserWindow, prefs: PrefsHandle, action: OverlayAction): void {
   switch (action.type) {
     case 'toggle':
       toggleOverlay(window);
@@ -22,6 +35,18 @@ function handleAction(window: BrowserWindow, action: OverlayAction): void {
     case 'move':
       moveOverlay(window, action.dx, action.dy);
       break;
+    case 'opacity':
+      prefs.update({ opacity: stepOpacity(window, action.delta) });
+      break;
+    case 'click-through': {
+      const clickThrough = !prefs.current.clickThrough;
+      setClickThrough(window, clickThrough);
+      prefs.update({ clickThrough });
+      // The renderer says so out loud: a window that stopped taking clicks and
+      // did not mention it reads as frozen.
+      window.webContents.send('overlay:click-through', clickThrough);
+      break;
+    }
     case 'compose':
       // Focus has to be granted before the renderer mounts the input, or the
       // field takes no keystrokes.
@@ -30,10 +55,39 @@ function handleAction(window: BrowserWindow, action: OverlayAction): void {
       window.webContents.send('overlay:action', action);
       break;
     default:
-      // ask / screenshot / clear are renderer concerns; they get real handlers
-      // in Phase 4.
+      // ask / screenshot / clear are renderer concerns.
       window.webContents.send('overlay:action', action);
   }
+}
+
+/** Holds the live prefs and writes them out, coalescing bursts of movement. */
+interface PrefsHandle {
+  readonly current: OverlayPrefs;
+  update(patch: Partial<OverlayPrefs>): void;
+  flush(): void;
+}
+
+function trackPrefs(store: OverlayStore, initial: OverlayPrefs): PrefsHandle {
+  let current = initial;
+  let pending: NodeJS.Timeout | null = null;
+
+  return {
+    get current() {
+      return current;
+    },
+    update(patch) {
+      current = { ...current, ...patch };
+      // A drag fires 'moved' continuously; writing each one would hammer the
+      // disk for a value only the last of which matters.
+      if (pending !== null) clearTimeout(pending);
+      pending = setTimeout(() => store.write(current), SAVE_DEBOUNCE_MS);
+    },
+    flush() {
+      if (pending !== null) clearTimeout(pending);
+      pending = null;
+      store.write(current);
+    },
+  };
 }
 
 void app.whenReady().then(() => {
@@ -46,8 +100,21 @@ void app.whenReady().then(() => {
   registerDisplayMediaHandler();
   registerExportHandler();
 
-  const window = createOverlayWindow();
+  const store = new OverlayStore(join(app.getPath('userData'), 'overlay.json'));
+  const prefs = trackPrefs(store, store.read());
+
+  const window = createOverlayWindow(prefs.current);
   ipcMain.handle('overlay:capture-protection', () => capture);
+
+  // Both fire per drag step, which is why the write is debounced.
+  const remember = (): void => prefs.update({ bounds: window.getBounds() });
+  window.on('moved', remember);
+  window.on('resized', remember);
+  // A quit can beat the debounce; the last position is the one worth keeping.
+  window.on('close', () => prefs.flush());
+
+  const tray = createTray(join(__dirname, '../../build/icon.ico'), window, () => app.quit());
+  app.on('will-quit', () => tray.destroy());
 
   // The header pill carries this too, but a pill on a transparent overlay is
   // easy to miss right up until the moment it matters. Unparented for the same
@@ -71,7 +138,7 @@ void app.whenReady().then(() => {
     return file;
   });
 
-  const refused = registerHotkeys(globalShortcut, (action) => handleAction(window, action));
+  const refused = registerHotkeys(globalShortcut, (action) => handleAction(window, prefs, action));
   if (refused.length > 0) {
     console.warn(`[overlay] hotkeys already owned by another app: ${refused.join(', ')}`);
   }

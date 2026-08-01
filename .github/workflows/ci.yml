@@ -48,4 +48,26 @@ jobs:
           java-version: '21'
           cache: maven
 
+      # Seven test classes run against the real Postgres, because the tables
+      # hang off Supabase's auth schema and the cross-user scoping they prove is
+      # what stands in for RLS — the backend connects as the service role and
+      # bypasses it.
+      #
+      # They carry an assumeTrue guard meant to skip them when the stack is not
+      # running, but it never fires: Spring Data JDBC resolves its dialect from
+      # a live connection during context initialisation, so an unreachable
+      # database fails the context before @BeforeEach runs. Without this step
+      # those classes error rather than skip.
+      #
+      # The full stack, not a plain Postgres container: `auth.users` and the
+      # foreign keys onto it are the point, and a bare image has neither. The
+      # excluded services are the ones nothing here talks to.
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start Supabase
+        working-directory: .
+        run: supabase start -x realtime,storage-api,imgproxy,studio,edge-runtime,logflare,vector,supavisor,postgres-meta,mailpit
+
       - run: ./mvnw -B verify

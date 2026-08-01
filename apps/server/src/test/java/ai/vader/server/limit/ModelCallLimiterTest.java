@@ -60,6 +60,46 @@ class ModelCallLimiterTest {
     }
 
     @Test
+    void reportsTheWholeAllowanceBeforeAnyCall() {
+        assertThat(limiter.remaining(USER, NOW)).isEqualTo(ModelCallLimiter.MAX_CALLS_PER_HOUR);
+    }
+
+    @Test
+    void countsDownAsCallsAreMade() {
+        limiter.tryAcquire(USER, NOW);
+        limiter.tryAcquire(USER, NOW);
+
+        assertThat(limiter.remaining(USER, NOW)).isEqualTo(ModelCallLimiter.MAX_CALLS_PER_HOUR - 2);
+    }
+
+    @Test
+    void readingWhatIsLeftDoesNotSpendAnything() {
+        limiter.remaining(USER, NOW);
+        limiter.remaining(USER, NOW);
+
+        assertThat(limiter.remaining(USER, NOW)).isEqualTo(ModelCallLimiter.MAX_CALLS_PER_HOUR);
+    }
+
+    @Test
+    void neverReportsFewerThanNoneLeft() {
+        for (int call = 0; call < ModelCallLimiter.MAX_CALLS_PER_HOUR + 10; call++) {
+            limiter.tryAcquire(USER, NOW);
+        }
+
+        assertThat(limiter.remaining(USER, NOW)).isZero();
+    }
+
+    @Test
+    void theAllowanceIsWholeAgainInTheNextWindow() {
+        for (int call = 0; call <= ModelCallLimiter.MAX_CALLS_PER_HOUR; call++) {
+            limiter.tryAcquire(USER, NOW);
+        }
+
+        assertThat(limiter.remaining(USER, NOW + ModelCallLimiter.WINDOW_MS))
+                .isEqualTo(ModelCallLimiter.MAX_CALLS_PER_HOUR);
+    }
+
+    @Test
     void requirePassesQuietlyUnderTheCap() {
         limiter.require(USER, NOW);
 
