@@ -44,6 +44,18 @@ const api = {
       ipcRenderer.off('overlay:action', listener);
     };
   },
+  /**
+   * Click-through changed. Worth surfacing rather than leaving silent: an
+   * overlay that has stopped accepting clicks is indistinguishable from a
+   * frozen one, and `Ctrl+Shift+X` is the only way back.
+   */
+  onClickThrough: (handler: (ignoring: boolean) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, ignoring: boolean): void => handler(ignoring);
+    ipcRenderer.on('overlay:click-through', listener);
+    return () => {
+      ipcRenderer.off('overlay:click-through', listener);
+    };
+  },
 } as const;
 
 contextBridge.exposeInMainWorld('vader', api);

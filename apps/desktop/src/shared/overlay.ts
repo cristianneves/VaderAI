@@ -10,7 +10,9 @@ export type OverlayAction =
   | { readonly type: 'compose' }
   | { readonly type: 'screenshot' }
   | { readonly type: 'clear' }
-  | { readonly type: 'move'; readonly dx: number; readonly dy: number };
+  | { readonly type: 'move'; readonly dx: number; readonly dy: number }
+  | { readonly type: 'click-through' }
+  | { readonly type: 'opacity'; readonly delta: number };
 
 export type CaptureProtection = { supported: true } | { supported: false; warning: string };
 

@@ -14,6 +14,10 @@ directories:
 # electron-builder follows those links badly and silently ships a broken app.
 files:
   - out/**
+  # The tray reads this at runtime, not just electron-builder at package time,
+  # so it has to be inside the asar as well as in buildResources. Resolved from
+  # out/main as ../../build/icon.ico, which is the same path in dev.
+  - build/icon.ico
   - '!node_modules/**'
 
 # No native modules, so there is nothing to rebuild against Electron's ABI.

@@ -21,9 +21,10 @@ import {
 interface Props {
   accessToken: string;
   onClose: () => void;
+  onSignOut: () => void;
 }
 
-export function Settings({ accessToken, onClose }: Props): React.JSX.Element {
+export function Settings({ accessToken, onClose, onSignOut }: Props): React.JSX.Element {
   const [view, setView] = useState<KnowledgeView>(EMPTY_VIEW);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -157,6 +158,14 @@ export function Settings({ accessToken, onClose }: Props): React.JSX.Element {
       ))}
 
       {error !== null && <p className="empty warn-text">{error}</p>}
+
+      {/* Until now the only sign-out was the one offered by a fatal auth error,
+          which meant the way to switch accounts was to wait for a failure. */}
+      <div className="sign-out">
+        <button className="link" onClick={onSignOut}>
+          Sign out
+        </button>
+      </div>
     </section>
   );
 }

@@ -1,10 +1,26 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, screen } from 'electron';
 import { join } from 'node:path';
+import {
+  clampOpacity,
+  DEFAULT_SIZE,
+  MIN_SIZE,
+  visibleBounds,
+  type OverlayPrefs,
+} from './overlay-prefs';
 
-export function createOverlayWindow(): BrowserWindow {
+export function createOverlayWindow(prefs: OverlayPrefs): BrowserWindow {
+  // Saved bounds are only honoured if they still land on a screen — see
+  // visibleBounds for the case this exists for.
+  const restored = visibleBounds(
+    prefs.bounds,
+    screen.getAllDisplays().map((display) => display.workArea),
+  );
+
   const window = new BrowserWindow({
-    width: 460,
-    height: 620,
+    ...DEFAULT_SIZE,
+    ...(restored ?? {}),
+    minWidth: MIN_SIZE.width,
+    minHeight: MIN_SIZE.height,
     show: false,
     frame: false,
     transparent: true,
@@ -26,6 +42,8 @@ export function createOverlayWindow(): BrowserWindow {
   window.setContentProtection(true);
   // 'screen-saver' is the level that stays above full-screen meeting apps.
   window.setAlwaysOnTop(true, 'screen-saver');
+  window.setOpacity(prefs.opacity);
+  setClickThrough(window, prefs.clickThrough);
 
   window.on('ready-to-show', () => window.showInactive());
 
@@ -47,6 +65,30 @@ export function toggleOverlay(window: BrowserWindow): void {
 export function moveOverlay(window: BrowserWindow, dx: number, dy: number): void {
   const [x = 0, y = 0] = window.getPosition();
   window.setPosition(x + dx, y + dy);
+}
+
+/**
+ * Steps the overlay's opacity and returns what it landed on.
+ *
+ * Clamped rather than wrapped: someone dimming past the floor wants "as faint
+ * as it goes", not a jump back to solid.
+ */
+export function stepOpacity(window: BrowserWindow, delta: number): number {
+  const next = clampOpacity(window.getOpacity() + delta);
+  window.setOpacity(next);
+  return next;
+}
+
+/**
+ * Lets clicks fall through to the meeting underneath.
+ *
+ * `forward: true` keeps mouse-move events coming, so hover still works and the
+ * window is not simply inert. The escape hatch is a global hotkey — with the
+ * overlay ignoring clicks there is no button left to press, so this must never
+ * be the only way back.
+ */
+export function setClickThrough(window: BrowserWindow, ignore: boolean): void {
+  window.setIgnoreMouseEvents(ignore, { forward: true });
 }
 
 /**
