@@ -105,6 +105,7 @@ public class PromptAssembler {
      * @param question what the user typed in the ask bar, or null to answer the
      *     interviewer's most recent question from the transcript
      * @param priorExchanges answers already given this session, oldest first
+     * @param requested which prompt the client asked for; a screenshot overrides it
      */
     public AnswerRequest assemble(
             List<TranscriptEvent> recentTurns,
@@ -112,10 +113,13 @@ public class PromptAssembler {
             Optional<AnswerRequest.ImageInput> image,
             String question,
             List<AnswerRequest.Exchange> priorExchanges,
-            Language language) {
+            Language language,
+            AnswerMode requested) {
         // A screenshot means there is a problem on the screen, which is the one
-        // case where the interview prompt is the wrong shape entirely.
-        AnswerMode mode = image.isPresent() ? AnswerMode.CODING : AnswerMode.INTERVIEW;
+        // case where the interview prompt is the wrong shape entirely. Otherwise
+        // the client decides — the ask bar's Code toggle, or interview when it
+        // says nothing.
+        AnswerMode mode = image.isPresent() ? AnswerMode.CODING : requested;
         String systemPrompt = mode == AnswerMode.CODING ? CODING_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
         List<String> cached = new ArrayList<>();

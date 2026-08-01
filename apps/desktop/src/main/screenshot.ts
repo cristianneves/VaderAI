@@ -1,24 +1,25 @@
 import { desktopCapturer } from 'electron';
-import type { ScreenshotCapture } from '../shared/overlay';
+import { encodeShot, SCREENSHOT_SIZE } from './screenshot-encode';
+import type { ShotResult } from '../shared/overlay';
 
-/**
- * 1080p is the useful ceiling: enough to read code or a slide, a fraction of
- * the visual tokens a native 4K grab would cost. `thumbnailSize` does the
- * downsampling in the compositor, so nothing full-size is ever allocated.
- */
-export const SCREENSHOT_SIZE = { width: 1920, height: 1080 } as const;
+export { SCREENSHOT_SIZE };
 
 /**
  * The overlay itself is excluded from this capture for the same reason it is
  * excluded from a screen share — content protection applies to every capture
  * path, including ours.
+ *
+ * <p>`thumbnailSize` does the downsampling in the compositor, so nothing
+ * full-size is ever allocated. Everything after the grab lives in
+ * `screenshot-encode`, which has no runtime dependency on electron and so can
+ * be tested.
  */
-export async function captureScreen(): Promise<ScreenshotCapture | null> {
+export async function captureScreen(): Promise<ShotResult> {
   const [screen] = await desktopCapturer.getSources({
     types: ['screen'],
     thumbnailSize: SCREENSHOT_SIZE,
   });
-  if (screen === undefined || screen.thumbnail.isEmpty()) return null;
+  if (screen === undefined) return { ok: false, reason: 'no screen was available to capture' };
 
-  return { mimeType: 'image/png', dataBase64: screen.thumbnail.toPNG().toString('base64') };
+  return encodeShot(screen.thumbnail);
 }

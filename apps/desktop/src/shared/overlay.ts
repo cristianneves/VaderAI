@@ -16,6 +16,16 @@ export type CaptureProtection = { supported: true } | { supported: false; warnin
 
 /** A downsampled screen grab, ready to go straight into a protocol message. */
 export interface ScreenshotCapture {
-  mimeType: 'image/png';
+  mimeType: 'image/jpeg';
   dataBase64: string;
 }
+
+/**
+ * Why a result rather than `ScreenshotCapture | null`: a capture can fail for
+ * two reasons the user can act on differently — there is no screen, or the
+ * screen is too detailed to fit under the protocol ceiling — and null collapses
+ * both into the overlay doing nothing at all.
+ */
+export type ShotResult =
+  | { readonly ok: true; readonly shot: ScreenshotCapture }
+  | { readonly ok: false; readonly reason: string };

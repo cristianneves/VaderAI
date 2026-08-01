@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { clientMessageSchema, MAX_QUESTION_CHARS, serverMessageSchema } from './index';
+import {
+  clientMessageSchema,
+  MAX_QUESTION_CHARS,
+  MAX_SCREENSHOT_BASE64_CHARS,
+  serverMessageSchema,
+} from './index';
 
 /**
  * The TypeScript half of the wire contract. The Java side asserts the same
@@ -62,6 +67,48 @@ describe('client fixtures', () => {
       }),
     ).toThrow();
   });
+
+  it('accepts an ask in coding mode', () => {
+    expect(
+      clientMessageSchema.parse({
+        type: 'ask',
+        trigger: 'manual',
+        question: 'two sum',
+        mode: 'coding',
+      }),
+    ).toMatchObject({ mode: 'coding' });
+  });
+
+  it('rejects a mode that is not one of the two prompts', () => {
+    expect(() =>
+      clientMessageSchema.parse({ ...(client['ask'] as object), mode: 'smart' }),
+    ).toThrow();
+  });
+
+  it('accepts a JPEG screenshot at exactly the ceiling', () => {
+    expect(
+      clientMessageSchema.parse({
+        type: 'screenshot',
+        mimeType: 'image/jpeg',
+        dataBase64: 'x'.repeat(MAX_SCREENSHOT_BASE64_CHARS),
+      }),
+    ).toMatchObject({ mimeType: 'image/jpeg' });
+  });
+
+  it('rejects a screenshot over the ceiling — one byte more closes the socket at 1009', () => {
+    expect(() =>
+      clientMessageSchema.parse({
+        ...(client['screenshot'] as object),
+        dataBase64: 'x'.repeat(MAX_SCREENSHOT_BASE64_CHARS + 1),
+      }),
+    ).toThrow();
+  });
+
+  it('rejects an image type the model does not take', () => {
+    expect(() =>
+      clientMessageSchema.parse({ ...(client['screenshot'] as object), mimeType: 'image/webp' }),
+    ).toThrow();
+  });
 });
 
 describe('server fixtures', () => {
@@ -94,6 +141,12 @@ describe('server fixtures', () => {
     expect(() =>
       serverMessageSchema.parse({ ...(server['error'] as object), code: 'teapot' }),
     ).toThrow();
+  });
+
+  it('accepts the rate_limited code', () => {
+    expect(
+      serverMessageSchema.parse({ ...(server['error'] as object), code: 'rate_limited' }),
+    ).toMatchObject({ code: 'rate_limited' });
   });
 
   it('rejects an unknown message type', () => {

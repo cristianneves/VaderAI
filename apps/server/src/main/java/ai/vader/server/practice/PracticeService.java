@@ -2,6 +2,7 @@ package ai.vader.server.practice;
 
 import ai.vader.server.knowledge.KnowledgeKind;
 import ai.vader.server.knowledge.KnowledgeService;
+import ai.vader.server.limit.ModelCallLimiter;
 import ai.vader.server.llm.JsonEngine;
 import ai.vader.server.preferences.PreferencesService;
 import ai.vader.server.session.TranscriptService;
@@ -37,6 +38,7 @@ public class PracticeService {
     private final KnowledgeService knowledge;
     private final PreferencesService preferences;
     private final JsonEngine llm;
+    private final ModelCallLimiter limits;
     private final ObjectMapper json;
 
     PracticeService(
@@ -45,12 +47,14 @@ public class PracticeService {
             KnowledgeService knowledge,
             PreferencesService preferences,
             JsonEngine llm,
+            ModelCallLimiter limits,
             ObjectMapper json) {
         this.questions = questions;
         this.transcripts = transcripts;
         this.knowledge = knowledge;
         this.preferences = preferences;
         this.llm = llm;
+        this.limits = limits;
         this.json = json;
     }
 
@@ -74,6 +78,7 @@ public class PracticeService {
      * second set, which the unique index on (session_id, position) also enforces.
      */
     public List<PracticeQuestion> start(UUID userId, UUID sessionId) {
+        limits.require(userId, System.currentTimeMillis());
         requireSession(userId, sessionId);
 
         List<PracticeQuestion> existing = questions.findBySessionIdAndUserIdOrderByPositionAsc(sessionId, userId);
@@ -105,6 +110,7 @@ public class PracticeService {
 
     /** Grades one answer and stores the result. Re-grading a position overwrites it. */
     public PracticeQuestion grade(UUID userId, UUID sessionId, int position, String answer) {
+        limits.require(userId, System.currentTimeMillis());
         PracticeQuestion question = questions
                 .findBySessionIdAndUserIdAndPosition(sessionId, userId, (short) position)
                 .orElseThrow(() -> new UnknownPracticeSessionException("no question at position " + position));
@@ -126,6 +132,7 @@ public class PracticeService {
      * than a column that has to be kept in step with re-grades.
      */
     public Report report(UUID userId, UUID sessionId) {
+        limits.require(userId, System.currentTimeMillis());
         List<PracticeQuestion> all = questions.findBySessionIdAndUserIdOrderByPositionAsc(sessionId, userId);
         if (all.isEmpty()) throw new UnknownPracticeSessionException("no practice session " + sessionId);
 

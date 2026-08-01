@@ -1,8 +1,10 @@
 package ai.vader.server.session;
 
 import ai.vader.server.llm.AnswerEngine;
+import ai.vader.server.llm.AnswerMode;
 import ai.vader.server.llm.AnswerRequest;
 import ai.vader.server.knowledge.KnowledgeService;
+import ai.vader.server.limit.ModelCallLimiter;
 import ai.vader.server.persistence.AnswerTrigger;
 import ai.vader.server.preferences.Language;
 import ai.vader.server.preferences.PreferencesService;
@@ -17,6 +19,7 @@ import ai.vader.server.turn.TurnDetector;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -56,6 +59,8 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
     private static final int SEND_TIME_LIMIT_MS = 5_000;
     /** A client too slow to drain this much is dropped rather than buffered forever. */
     private static final int SEND_BUFFER_LIMIT_BYTES = 512 * 1024;
+    /** What the Anthropic image block accepts, and so what we will forward. */
+    private static final Set<String> SCREENSHOT_MIME_TYPES = Set.of("image/png", "image/jpeg");
 
     private final Map<String, LiveSession> sessions = new ConcurrentHashMap<>();
     private final ScheduledExecutorService timers =
@@ -68,6 +73,7 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
     private final PreferencesService preferences;
     private final AnswerEngine answers;
     private final PromptAssembler prompts;
+    private final ModelCallLimiter limits;
     private final ObjectMapper json;
 
     SessionWebSocketHandler(
@@ -78,6 +84,7 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
             PreferencesService preferences,
             AnswerEngine answers,
             PromptAssembler prompts,
+            ModelCallLimiter limits,
             ObjectMapper json) {
         this.jwtDecoder = jwtDecoder;
         this.sttProviders = sttProviders;
@@ -86,13 +93,14 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
         this.preferences = preferences;
         this.answers = answers;
         this.prompts = prompts;
+        this.limits = limits;
         this.json = json;
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         var socket = new ConcurrentWebSocketSessionDecorator(session, SEND_TIME_LIMIT_MS, SEND_BUFFER_LIMIT_BYTES);
-        var live = new LiveSession(socket, json, transcripts, answers, prompts);
+        var live = new LiveSession(socket, json, transcripts, answers, prompts, limits);
         sessions.put(session.getId(), live);
         live.awaitAuth(timers.schedule(
                 () -> closeUnauthenticated(session), AUTH_DEADLINE_SECONDS, TimeUnit.SECONDS));
@@ -117,15 +125,34 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
             case ClientMessage.Ask ask -> {
                 if (!requireAuth(session, live)) return;
                 live.turns().recordManualAsk(System.currentTimeMillis());
-                live.ask(AnswerTrigger.MANUAL, Optional.empty(), ask.question());
+                // Silence means interview. This is the only place that decides
+                // it, so the protocol can keep sending nothing on the common path.
+                live.ask(
+                        AnswerTrigger.MANUAL,
+                        Optional.empty(),
+                        ask.question(),
+                        ask.mode() == ClientMessage.Mode.CODING ? AnswerMode.CODING : AnswerMode.INTERVIEW);
             }
             case ClientMessage.Screenshot shot -> {
                 if (!requireAuth(session, live)) return;
+                // The client enforces this before sending, but a frame between
+                // the ceiling and the container's text buffer still reaches here
+                // — and a screenshot the model would reject is not worth an Opus
+                // call either way.
+                if (shot.dataBase64().length() > ClientMessage.MAX_SCREENSHOT_BASE64_CHARS
+                        || !SCREENSHOT_MIME_TYPES.contains(shot.mimeType())) {
+                    live.send(new ServerMessage.Failure(
+                            ErrorCode.BAD_REQUEST, "that screen capture is too large or not an image we can read"));
+                    return;
+                }
                 live.turns().recordManualAsk(System.currentTimeMillis());
+                // The image is what forces coding, inside the assembler — a
+                // second way to say the same thing is a second thing to get wrong.
                 live.ask(
                         AnswerTrigger.SCREENSHOT,
                         Optional.of(new AnswerRequest.ImageInput(shot.mimeType(), shot.dataBase64())),
-                        shot.note());
+                        shot.note(),
+                        AnswerMode.INTERVIEW);
             }
         }
     }
@@ -199,7 +226,7 @@ public class SessionWebSocketHandler extends AbstractWebSocketHandler {
                 timers.schedule(
                         () -> {
                             if (live.turns().pollAutoAsk(System.currentTimeMillis())) {
-                                live.ask(AnswerTrigger.AUTO, Optional.empty(), null);
+                                live.ask(AnswerTrigger.AUTO, Optional.empty(), null, AnswerMode.INTERVIEW);
                             }
                         },
                         TurnDetector.SILENCE_MS,

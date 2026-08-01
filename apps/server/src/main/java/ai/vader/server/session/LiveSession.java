@@ -1,7 +1,9 @@
 package ai.vader.server.session;
 
 import ai.vader.server.llm.AnswerEngine;
+import ai.vader.server.llm.AnswerMode;
 import ai.vader.server.llm.AnswerRequest;
+import ai.vader.server.limit.ModelCallLimiter;
 import ai.vader.server.persistence.Answer;
 import ai.vader.server.persistence.AnswerTrigger;
 import ai.vader.server.persistence.TranscriptTurn;
@@ -20,6 +22,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,12 +48,19 @@ final class LiveSession {
      * work without the request growing all session.
      */
     static final int MEMORY_EXCHANGES = 3;
+    /**
+     * Logged when an answer completed without producing a single delta. A
+     * sentinel rather than a zero, so an empty answer cannot drag the median
+     * of a metric that exists to be read in aggregate.
+     */
+    private static final long NO_FIRST_TOKEN = -1;
 
     private final WebSocketSession socket;
     private final ObjectMapper json;
     private final TranscriptService transcripts;
     private final AnswerEngine answers;
     private final PromptAssembler prompts;
+    private final ModelCallLimiter limits;
     private final TranscriptRingBuffer recent = new TranscriptRingBuffer(CONTEXT_TURNS);
     private final TurnDetector turns = new TurnDetector();
     private final List<TranscriptTurn> pending = new ArrayList<>();
@@ -69,12 +79,14 @@ final class LiveSession {
             ObjectMapper json,
             TranscriptService transcripts,
             AnswerEngine answers,
-            PromptAssembler prompts) {
+            PromptAssembler prompts,
+            ModelCallLimiter limits) {
         this.socket = socket;
         this.json = json;
         this.transcripts = transcripts;
         this.answers = answers;
         this.prompts = prompts;
+        this.limits = limits;
     }
 
     TurnDetector turns() {
@@ -92,13 +104,28 @@ final class LiveSession {
      * follow-up memory — a cancelled answer is not something the model said.
      *
      * @param question what the user typed, or null to answer from the transcript
+     * @param mode which prompt to answer with; a screenshot forces coding anyway
      */
-    void ask(AnswerTrigger trigger, Optional<AnswerRequest.ImageInput> image, String question) {
+    void ask(AnswerTrigger trigger, Optional<AnswerRequest.ImageInput> image, String question, AnswerMode mode) {
+        // Before cancelInFlight, not after: a refused question must not take
+        // down the answer already on screen. All three triggers — manual,
+        // screenshot and auto — funnel through here, so this is the only check.
+        if (!limits.tryAcquire(userId, System.currentTimeMillis())) {
+            send(new ServerMessage.Failure(
+                    ErrorCode.RATE_LIMITED,
+                    "you have reached the hourly question limit — the next one will work in a little while"));
+            return;
+        }
         cancelInFlight();
 
         UUID answerId = UUID.randomUUID();
+        // Started before assembly, which is on the critical path and belongs
+        // inside the number.
+        long askedAtNanos = System.nanoTime();
+        var firstTokenMs = new AtomicLong(NO_FIRST_TOKEN);
         String asked = describeAsk(question, image.isPresent());
-        var request = prompts.assemble(recent.snapshot(), knowledgeBase, image, question, memorySnapshot(), language);
+        var request =
+                prompts.assemble(recent.snapshot(), knowledgeBase, image, question, memorySnapshot(), language, mode);
         // Local to this call, so two asks racing each other cannot append into
         // one another's text.
         var spoken = new StringBuilder();
@@ -107,6 +134,7 @@ final class LiveSession {
         inFlight.set(answers.stream(request, new AnswerEngine.Listener() {
             @Override
             public void onDelta(String text) {
+                firstTokenMs.compareAndSet(NO_FIRST_TOKEN, (System.nanoTime() - askedAtNanos) / 1_000_000);
                 // Append before sending: a send can fail on a slow client, and
                 // the stored answer should be what the model produced rather
                 // than what survived the socket.
@@ -119,9 +147,17 @@ final class LiveSession {
                 recordAnswer(spoken.toString(), trigger);
                 remember(asked, spoken.toString());
                 send(new ServerMessage.AnswerEnd(answerId));
+                // ttftMs is this server's ask-to-first-delta, not the number the
+                // product is sold on: end of question to first visible token also
+                // contains TurnDetector.SILENCE_MS on the auto path and one hop
+                // to the overlay. Read it as a floor. mode is here because a
+                // screenshot carries ~1200 extra uncached input tokens, which
+                // makes the figure meaningless without it.
                 log.info(
-                        "answer {} tokens in={} out={} cacheRead={} cacheWrite={}",
+                        "answer {} mode={} ttftMs={} tokens in={} out={} cacheRead={} cacheWrite={}",
                         answerId,
+                        request.mode(),
+                        firstTokenMs.get(),
                         usage.inputTokens(),
                         usage.outputTokens(),
                         usage.cacheReadInputTokens(),

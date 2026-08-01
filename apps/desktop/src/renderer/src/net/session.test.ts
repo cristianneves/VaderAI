@@ -177,9 +177,32 @@ describe('SessionSocket', () => {
     expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({ type: 'ask', trigger: 'manual' });
   });
 
+  it('names coding mode on the wire', async () => {
+    const { session, socket } = await live();
+
+    session.ask('two sum', 'coding');
+
+    expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({
+      type: 'ask',
+      trigger: 'manual',
+      question: 'two sum',
+      mode: 'coding',
+    });
+  });
+
+  it('omits mode on the interview path, so the common ask is unchanged on the wire', async () => {
+    const { session, socket } = await live();
+
+    session.ask('tell me about yourself');
+    expect(JSON.parse(socket.sent.at(-1) as string)).not.toHaveProperty('mode');
+
+    session.ask();
+    expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({ type: 'ask', trigger: 'manual' });
+  });
+
   it('sends a screenshot note when there is one, and omits the field when not', async () => {
     const { session, socket } = await live();
-    const shot = { mimeType: 'image/png', dataBase64: 'AAAA' } as const;
+    const shot = { mimeType: 'image/jpeg', dataBase64: 'AAAA' } as const;
 
     session.askAboutScreen(shot);
     expect(JSON.parse(socket.sent.at(-1) as string)).toEqual({ type: 'screenshot', ...shot });

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import ai.vader.server.config.JdbcConversionsConfig;
 import ai.vader.server.knowledge.KnowledgeService;
+import ai.vader.server.limit.ModelCallLimiter;
 import ai.vader.server.llm.JsonEngine;
 import ai.vader.server.persistence.SessionRow;
 import ai.vader.server.preferences.PreferencesService;
@@ -24,6 +25,7 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.web.server.ResponseStatusException;
@@ -44,6 +46,7 @@ import org.springframework.web.server.ResponseStatusException;
     TranscriptService.class,
     KnowledgeService.class,
     PreferencesService.class,
+    ModelCallLimiter.class,
     JdbcConversionsConfig.class,
     SessionSummaryStorageTest.Stubs.class
 })
@@ -94,6 +97,9 @@ class SessionSummaryStorageTest {
 
     @Autowired
     private StubJsonEngine llm;
+
+    @Autowired
+    private ModelCallLimiter limits;
 
     @Autowired
     private JdbcTemplate jdbc;
@@ -152,6 +158,39 @@ class SessionSummaryStorageTest {
         assertThat(reread.keyPoints()).containsExactly("They run Postgres on RDS", "Hiring at staff level");
         assertThat(reread.actionItems()).containsExactly("Send the architecture doc");
         assertThat(reread.summary()).isEqualTo("You walked through the payments rewrite.");
+    }
+
+    /**
+     * The ordering guard for the limit: the stored-recap early return sits above
+     * it, so reopening a recap you already generated never costs a slice of your
+     * hour. Getting this the wrong way round bills a user for reading a page.
+     */
+    @Test
+    void aStoredRecapIsServedEvenWhenTheUserIsOverTheirLimit() {
+        var generated = summaries.recapOf(sessionId, alice);
+        exhaust(alice);
+
+        assertThat(summaries.recapOf(sessionId, alice)).isEqualTo(generated);
+        assertThat(llm.prompts).hasSize(1);
+    }
+
+    @Test
+    void generatingANewRecapOverTheLimitIsRefusedAndCostsNoModelCall() {
+        exhaust(alice);
+
+        assertThatThrownBy(() -> summaries.recapOf(sessionId, alice))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(thrown -> ((ResponseStatusException) thrown).getStatusCode())
+                .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(llm.prompts).isEmpty();
+    }
+
+    /** Spends the user's whole hour. Each test seeds a fresh id, so this is local to it. */
+    private void exhaust(UUID userId) {
+        long now = System.currentTimeMillis();
+        for (int call = 0; call <= ModelCallLimiter.MAX_CALLS_PER_HOUR; call++) {
+            limits.tryAcquire(userId, now);
+        }
     }
 
     @Test

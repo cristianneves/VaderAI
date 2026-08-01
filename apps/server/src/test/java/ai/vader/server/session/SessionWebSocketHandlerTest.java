@@ -3,16 +3,25 @@ package ai.vader.server.session;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import ai.vader.server.llm.AnswerEngine;
+import ai.vader.server.llm.AnswerMode;
+import ai.vader.server.limit.ModelCallLimiter;
+import ai.vader.server.llm.AnswerRequest;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
 import ai.vader.server.persistence.Answer;
 import ai.vader.server.persistence.AnswerTrigger;
 import ai.vader.server.persistence.SessionKind;
 import ai.vader.server.persistence.SessionRow;
+import ai.vader.server.protocol.ClientMessage;
 import ai.vader.server.stt.SttProvider;
 import ai.vader.server.stt.SttProviderFactory;
 import org.mockito.ArgumentCaptor;
@@ -23,6 +32,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -67,7 +77,36 @@ class SessionWebSocketHandlerTest {
     @MockitoBean
     private AnswerEngine answerEngine;
 
+    @MockitoBean
+    private ModelCallLimiter limits;
+
     private final List<ByteBuffer> audioSentToStt = new CopyOnWriteArrayList<>();
+
+    /**
+     * The ttftMs measurement in Phase 12d only exists as a log line, so the log
+     * is what there is to assert against. Attached and detached per test so one
+     * test's answers cannot be read as another's.
+     */
+    private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
+
+    private List<String> logged(String containing) {
+        return logs.list.stream()
+                .map(ILoggingEvent::getFormattedMessage)
+                .filter(message -> message.contains(containing))
+                .toList();
+    }
+
+    @BeforeEach
+    void captureLogs() {
+        logs.start();
+        ((Logger) LoggerFactory.getLogger(LiveSession.class)).addAppender(logs);
+    }
+
+    @AfterEach
+    void releaseLogs() {
+        ((Logger) LoggerFactory.getLogger(LiveSession.class)).detachAppender(logs);
+        logs.stop();
+    }
 
     /** Replays two deltas and finishes, as a successful answer would. */
     private void stubACompletedAnswer() {
@@ -94,6 +133,8 @@ class SessionWebSocketHandlerTest {
 
     @BeforeEach
     void stubCollaborators() {
+        // Permissive by default; the two limit tests below flip it.
+        given(limits.tryAcquire(any(), anyLong())).willReturn(true);
         given(jwtDecoder.decode(GOOD_TOKEN))
                 .willReturn(Jwt.withTokenValue(GOOD_TOKEN)
                         .header("alg", "ES256")
@@ -235,6 +276,79 @@ class SessionWebSocketHandlerTest {
     }
 
     @Test
+    void aCodingAskReachesTheEngineWithTheCodingPrompt() throws Exception {
+        stubACompletedAnswer();
+        var client = authenticated();
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\",\"question\":\"two sum\",\"mode\":\"coding\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"type\":\"answer_end\"")));
+        var sent = ArgumentCaptor.forClass(AnswerRequest.class);
+        verify(answerEngine).stream(sent.capture(), any());
+        assertThat(sent.getValue().mode()).isEqualTo(AnswerMode.CODING);
+    }
+
+    @Test
+    void anAskThatNamesNoModeIsAnInterviewQuestion() throws Exception {
+        stubACompletedAnswer();
+        var client = authenticated();
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"type\":\"answer_end\"")));
+        var sent = ArgumentCaptor.forClass(AnswerRequest.class);
+        verify(answerEngine).stream(sent.capture(), any());
+        assertThat(sent.getValue().mode()).isEqualTo(AnswerMode.INTERVIEW);
+    }
+
+    @Test
+    void aJpegScreenshotIsAnswered() throws Exception {
+        stubACompletedAnswer();
+        var client = authenticated();
+
+        client.send("{\"type\":\"screenshot\",\"mimeType\":\"image/jpeg\",\"dataBase64\":\"QUJD\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"type\":\"answer_end\"")));
+        var sent = ArgumentCaptor.forClass(AnswerRequest.class);
+        verify(answerEngine).stream(sent.capture(), any());
+        assertThat(sent.getValue().image()).get().extracting(AnswerRequest.ImageInput::mediaType).isEqualTo("image/jpeg");
+    }
+
+    /**
+     * The regression guard for Phase 12a. A screenshot over the ceiling but under
+     * the container's text buffer has to come back as a frame; before the guard
+     * existed, a 1080p PNG went over the buffer instead and Tomcat closed the
+     * live session with 1009 and no error at all.
+     */
+    @Test
+    void anOversizedScreenshotIsRefusedWithoutClosingTheSession() throws Exception {
+        var client = authenticated();
+
+        client.send("{\"type\":\"screenshot\",\"mimeType\":\"image/jpeg\",\"dataBase64\":\""
+                + "A".repeat(ClientMessage.MAX_SCREENSHOT_BASE64_CHARS + 1) + "\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"code\":\"bad_request\"")));
+        assertThat(client.closeStatus.get()).isNull();
+        verify(answerEngine, never()).stream(any(), any());
+    }
+
+    @Test
+    void anImageTypeTheModelCannotReadIsRefused() throws Exception {
+        var client = authenticated();
+
+        client.send("{\"type\":\"screenshot\",\"mimeType\":\"image/webp\",\"dataBase64\":\"QUJD\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"code\":\"bad_request\"")));
+        assertThat(client.closeStatus.get()).isNull();
+        verify(answerEngine, never()).stream(any(), any());
+    }
+
+    @Test
     void anAnswerCancelledMidStreamIsNotRecorded() throws Exception {
         stubAnAnswerThatNeverFinishes();
         var client = authenticated();
@@ -252,6 +366,97 @@ class SessionWebSocketHandlerTest {
                         == 2);
 
         verify(transcripts, never()).saveAnswer(any());
+    }
+
+    @Test
+    void anAskOverTheHourlyLimitIsRefusedAndCostsNoModelCall() throws Exception {
+        var client = authenticated();
+        given(limits.tryAcquire(any(), anyLong())).willReturn(false);
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"code\":\"rate_limited\"")));
+        verify(answerEngine, never()).stream(any(), any());
+        // No phantom answer either: the overlay would sit on "Thinking..." forever.
+        assertThat(client.messages).noneMatch(m -> m.contains("\"type\":\"answer_start\""));
+    }
+
+    /**
+     * The ordering guard. The limit check has to run before cancelInFlight, or
+     * hitting the cap would wipe the answer the user is still reading.
+     */
+    @Test
+    void aRefusedAskDoesNotCancelTheAnswerAlreadyStreaming() throws Exception {
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean(false);
+        given(answerEngine.stream(any(), any()))
+                .willAnswer(invocation -> (AnswerEngine.AnswerStream) () -> cancelled.set(true));
+        var client = authenticated();
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"type\":\"answer_start\"")));
+
+        given(limits.tryAcquire(any(), anyLong())).willReturn(false);
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"code\":\"rate_limited\"")));
+
+        assertThat(cancelled).isFalse();
+    }
+
+    /**
+     * Phase 12d. The latency claim in docs/001 was never measured, which is why
+     * the fast-mode and auto-ask defaults were still open questions.
+     */
+    @Test
+    void aCompletedAnswerLogsItsTimeToFirstToken() throws Exception {
+        stubACompletedAnswer();
+        var client = authenticated();
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"type\":\"answer_end\"")));
+        await().atMost(Duration.ofSeconds(5)).until(() -> !logged("ttftMs=").isEmpty());
+        String line = logged("ttftMs=").get(0);
+        // On the same line as the usage, or the two cannot be correlated per answer.
+        assertThat(line).contains("tokens in=").contains("mode=INTERVIEW");
+        var found = java.util.regex.Pattern.compile("ttftMs=(-?\\d+)").matcher(line);
+        assertThat(found.find()).isTrue();
+        assertThat(Long.parseLong(found.group(1))).isNotNegative();
+    }
+
+    @Test
+    void anAnswerThatFailsBeforeAnyTokenLogsNoTimeToFirstToken() throws Exception {
+        given(answerEngine.stream(any(), any())).willAnswer(invocation -> {
+            AnswerEngine.Listener listener = invocation.getArgument(1);
+            listener.onError(new IllegalStateException("provider is down"));
+            return (AnswerEngine.AnswerStream) () -> {};
+        });
+        var client = authenticated();
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> client.messages.stream().anyMatch(m -> m.contains("\"code\":\"llm_failed\"")));
+        // Neither onDelta nor onComplete ran, so there is nothing to time.
+        assertThat(logged("ttftMs=")).isEmpty();
+    }
+
+    @Test
+    void anAnswerWithNoDeltasReportsTheSentinelRatherThanAFabricatedZero() throws Exception {
+        given(answerEngine.stream(any(), any())).willAnswer(invocation -> {
+            AnswerEngine.Listener listener = invocation.getArgument(1);
+            listener.onComplete(new AnswerEngine.AnswerUsage(10, 0, 0, 0));
+            return (AnswerEngine.AnswerStream) () -> {};
+        });
+        var client = authenticated();
+
+        client.send("{\"type\":\"ask\",\"trigger\":\"manual\"}");
+
+        await().atMost(Duration.ofSeconds(5)).until(() -> !logged("ttftMs=").isEmpty());
+        assertThat(logged("ttftMs=").get(0)).contains("ttftMs=-1");
     }
 
     @Test

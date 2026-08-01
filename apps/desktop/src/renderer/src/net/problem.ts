@@ -20,6 +20,9 @@ const SEVERITY: Record<ProtocolError['code'], Severity> = {
   stt_failed: 'transient',
   llm_failed: 'transient',
   bad_request: 'bug',
+  // The one failure the user can actually fix, by waiting — so amber and
+  // dismissible rather than the red 'bug' the other server-side codes get.
+  rate_limited: 'transient',
   internal: 'bug',
 };
 
